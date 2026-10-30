@@ -4,6 +4,7 @@
     android:layout_height="wrap_content"
     android:orientation="vertical"
     android:gravity="center_horizontal"
+    android:background="@drawable/owl_selection_background"
     android:foreground="?attr/selectableItemBackground"
     android:padding="12dp"
     android:layout_margin="4dp">

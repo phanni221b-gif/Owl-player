@@ -8,20 +8,48 @@ import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 
 class FolderAdapter(
-    private val onClick: (MediaFolder) -> Unit
+    private val onClick: (MediaFolder) -> Unit,
+    private val onSelectionChanged: (Int) -> Unit
 ) : RecyclerView.Adapter<FolderAdapter.Holder>() {
     private var allItems: List<MediaFolder> = emptyList()
     private var visibleItems: List<MediaFolder> = emptyList()
     private var currentQuery: String = ""
+    private val selectedKeys = linkedSetOf<String>()
 
     fun submit(items: List<MediaFolder>) {
         allItems = items
+        selectedKeys.retainAll(items.map { it.key }.toSet())
         applyFilter()
+        onSelectionChanged(selectedKeys.size)
     }
 
     fun filter(query: String) {
         currentQuery = query.trim()
         applyFilter()
+    }
+
+    fun isSelectionMode(): Boolean = selectedKeys.isNotEmpty()
+
+    fun selectedItems(): List<MediaFolder> =
+        allItems.filter { selectedKeys.contains(it.key) }
+
+    fun clearSelection() {
+        if (selectedKeys.isEmpty()) return
+        selectedKeys.clear()
+        notifyDataSetChanged()
+        onSelectionChanged(0)
+    }
+
+    fun selectAllVisible() {
+        selectedKeys.addAll(visibleItems.map { it.key })
+        notifyDataSetChanged()
+        onSelectionChanged(selectedKeys.size)
+    }
+
+    private fun toggleSelection(item: MediaFolder) {
+        if (!selectedKeys.add(item.key)) selectedKeys.remove(item.key)
+        notifyDataSetChanged()
+        onSelectionChanged(selectedKeys.size)
     }
 
     private fun applyFilter() {
@@ -54,7 +82,14 @@ class FolderAdapter(
             } else {
                 "${item.storageLabel} · ${item.videos.size} 비디오"
             }
-            itemView.setOnClickListener { onClick(item) }
+            itemView.isActivated = selectedKeys.contains(item.key)
+            itemView.setOnClickListener {
+                if (isSelectionMode()) toggleSelection(item) else onClick(item)
+            }
+            itemView.setOnLongClickListener {
+                toggleSelection(item)
+                true
+            }
             icon.contentDescription = item.name
         }
     }

@@ -7,6 +7,7 @@
     android:background="?android:attr/colorBackground">
 
     <LinearLayout
+        android:id="@+id/mainToolbar"
         android:layout_width="match_parent"
         android:layout_height="60dp"
         android:gravity="center_vertical"
@@ -49,6 +50,72 @@
             android:contentDescription="설정"
             android:src="@drawable/ic_settings_black_24dp"
             android:tint="?android:attr/textColorPrimary" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/mainSelectionBar"
+        android:layout_width="match_parent"
+        android:layout_height="60dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="4dp"
+        android:paddingEnd="4dp"
+        android:visibility="gone">
+
+        <ImageButton
+            android:id="@+id/mainSelectionClose"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="선택 취소"
+            android:src="@android:drawable/ic_menu_close_clear_cancel"
+            android:tint="?android:attr/textColorPrimary" />
+
+        <TextView
+            android:id="@+id/mainSelectionCount"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="1개 선택"
+            android:textColor="@color/owl_orange_dark"
+            android:textSize="18sp"
+            android:textStyle="bold" />
+
+        <Button
+            android:id="@+id/mainSelectAll"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:minWidth="0dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="전체선택"
+            android:textColor="@color/owl_orange_dark"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/mainMoveSelected"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:minWidth="0dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="이동"
+            android:textColor="@color/owl_orange_dark"
+            android:textSize="12sp" />
+
+        <Button
+            android:id="@+id/mainDeleteSelected"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:minWidth="0dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="삭제"
+            android:textColor="#D32F2F"
+            android:textSize="12sp" />
     </LinearLayout>
 
     <FrameLayout

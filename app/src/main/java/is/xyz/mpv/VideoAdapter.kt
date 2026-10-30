@@ -11,16 +11,43 @@ import java.util.Locale
 
 class VideoAdapter(
     private val onClick: (MediaVideo) -> Unit,
-    private val onLongClick: (MediaVideo) -> Unit = {}
+    private val onSelectionChanged: (Int) -> Unit
 ) : RecyclerView.Adapter<VideoAdapter.Holder>() {
     private var items: List<MediaVideo> = emptyList()
+    private val selectedUris = linkedSetOf<String>()
 
     fun submit(videos: List<MediaVideo>) {
         items = videos
+        selectedUris.retainAll(videos.map { it.uri }.toSet())
         notifyDataSetChanged()
+        onSelectionChanged(selectedUris.size)
     }
 
     fun refreshProgress() = notifyDataSetChanged()
+
+    fun isSelectionMode(): Boolean = selectedUris.isNotEmpty()
+
+    fun selectedItems(): List<MediaVideo> =
+        items.filter { selectedUris.contains(it.uri) }
+
+    fun clearSelection() {
+        if (selectedUris.isEmpty()) return
+        selectedUris.clear()
+        notifyDataSetChanged()
+        onSelectionChanged(0)
+    }
+
+    fun selectAll() {
+        selectedUris.addAll(items.map { it.uri })
+        notifyDataSetChanged()
+        onSelectionChanged(selectedUris.size)
+    }
+
+    private fun toggleSelection(item: MediaVideo) {
+        if (!selectedUris.add(item.uri)) selectedUris.remove(item.uri)
+        notifyDataSetChanged()
+        onSelectionChanged(selectedUris.size)
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
         return Holder(LayoutInflater.from(parent.context).inflate(R.layout.item_video, parent, false))
@@ -59,9 +86,12 @@ class VideoAdapter(
                 resume.text = ""
             }
 
-            itemView.setOnClickListener { onClick(item) }
+            itemView.isActivated = selectedUris.contains(item.uri)
+            itemView.setOnClickListener {
+                if (isSelectionMode()) toggleSelection(item) else onClick(item)
+            }
             itemView.setOnLongClickListener {
-                onLongClick(item)
+                toggleSelection(item)
                 true
             }
         }

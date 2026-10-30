@@ -13,25 +13,44 @@ import android.view.View
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
+import android.widget.Toast
+import androidx.activity.addCallback
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import java.io.File
 import java.util.Locale
 import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private lateinit var recycler: RecyclerView
     private lateinit var emptyText: TextView
-    private val adapter = FolderAdapter(::openFolder)
+    private val adapter = FolderAdapter(::openFolder, ::onFolderSelectionChanged)
     private var waitingForAllFiles = false
     private var currentFolders: List<MediaFolder> = emptyList()
     private var sortMode = SORT_NAME
+    private var pendingMoveFolders: List<MediaFolder> = emptyList()
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
     ) { loadFolders() }
+
+    private val moveDestinationLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        val selected = pendingMoveFolders
+        pendingMoveFolders = emptyList()
+        if (result.resultCode != RESULT_OK || selected.isEmpty()) return@registerForActivityResult
+        val path = result.data?.getStringExtra("path") ?: return@registerForActivityResult
+        val destination = File(path)
+        if (!destination.isDirectory) {
+            Toast.makeText(this, "이동할 폴더를 선택해줘.", Toast.LENGTH_SHORT).show()
+            return@registerForActivityResult
+        }
+        performFolderMove(selected, destination)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -54,6 +73,15 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             startActivity(Intent(this, ApvSettingsActivity::class.java))
         }
 
+        findViewById<View>(R.id.mainSelectionClose).setOnClickListener { adapter.clearSelection() }
+        findViewById<View>(R.id.mainSelectAll).setOnClickListener { adapter.selectAllVisible() }
+        findViewById<View>(R.id.mainMoveSelected).setOnClickListener { startMoveSelectedFolders() }
+        findViewById<View>(R.id.mainDeleteSelected).setOnClickListener { confirmDeleteSelectedFolders() }
+
+        onBackPressedDispatcher.addCallback(this) {
+            if (adapter.isSelectionMode()) adapter.clearSelection() else finish()
+        }
+
         ensureAccess()
     }
 
@@ -64,6 +92,12 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             ensureAccess()
         }
         recycler.post { updateGridSpan() }
+    }
+
+    private fun onFolderSelectionChanged(count: Int) {
+        findViewById<View>(R.id.mainToolbar).visibility = if (count == 0) View.VISIBLE else View.GONE
+        findViewById<View>(R.id.mainSelectionBar).visibility = if (count == 0) View.GONE else View.VISIBLE
+        findViewById<TextView>(R.id.mainSelectionCount).text = "${count}개 선택"
     }
 
     private fun updateGridSpan() {
@@ -191,6 +225,65 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             .setNeutralButton("초기화") { _, _ -> adapter.filter("") }
             .setNegativeButton("취소", null)
             .show()
+    }
+
+    private fun confirmDeleteSelectedFolders() {
+        val selected = adapter.selectedItems()
+        if (selected.isEmpty()) return
+        AlertDialog.Builder(this)
+            .setTitle("정말 삭제하겠습니까?")
+            .setMessage("선택한 ${selected.size}개 폴더와 그 안의 모든 파일을 휴지통으로 이동하지 않고 완전히 삭제합니다.\n\n삭제 후에는 복구할 수 없습니다.")
+            .setNegativeButton("취소", null)
+            .setPositiveButton("완전 삭제") { _, _ -> performFolderDelete(selected) }
+            .show()
+    }
+
+    private fun performFolderDelete(selected: List<MediaFolder>) {
+        Toast.makeText(this, "완전 삭제 중…", Toast.LENGTH_SHORT).show()
+        thread(name = "OwlPermanentFolderDelete") {
+            val result = OwlFileOperations.deleteFolders(this, selected)
+            runOnUiThread {
+                adapter.clearSelection()
+                showOperationResult("삭제", result)
+                loadFolders()
+            }
+        }
+    }
+
+    private fun startMoveSelectedFolders() {
+        val selected = adapter.selectedItems()
+        if (selected.isEmpty()) return
+        pendingMoveFolders = selected
+        val defaultPath = selected.firstOrNull()?.videos?.firstOrNull()?.path
+            ?.let(::File)?.parentFile?.parentFile?.absolutePath
+        val intent = Intent(this, FilePickerActivity::class.java).apply {
+            putExtra("skip", FilePickerActivity.FILE_PICKER)
+            putExtra("allow_dir", true)
+            putExtra("title", "이동할 폴더 선택")
+            if (!defaultPath.isNullOrBlank()) putExtra("default_path", defaultPath)
+        }
+        moveDestinationLauncher.launch(intent)
+    }
+
+    private fun performFolderMove(selected: List<MediaFolder>, destination: File) {
+        Toast.makeText(this, "이동 중…", Toast.LENGTH_SHORT).show()
+        thread(name = "OwlFolderMove") {
+            val result = OwlFileOperations.moveFolders(this, selected, destination)
+            runOnUiThread {
+                adapter.clearSelection()
+                showOperationResult("이동", result)
+                loadFolders()
+            }
+        }
+    }
+
+    private fun showOperationResult(action: String, result: OwlFileOperationResult) {
+        val message = if (result.failureCount == 0) {
+            "${result.successCount}개 항목 ${action} 완료"
+        } else {
+            "${result.successCount}개 ${action} 완료 · ${result.failureCount}개 실패"
+        }
+        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
     companion object {

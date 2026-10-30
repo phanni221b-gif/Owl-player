@@ -9,6 +9,7 @@
     android:paddingEnd="16dp"
     android:paddingTop="10dp"
     android:paddingBottom="10dp"
+    android:background="@drawable/owl_selection_background"
     android:foreground="?attr/selectableItemBackground">
 
     <FrameLayout
