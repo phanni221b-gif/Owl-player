@@ -1,5 +1,6 @@
 name: Release Owl
 
+# Binary-source icon validation enabled.
 on:
   push:
     paths:
