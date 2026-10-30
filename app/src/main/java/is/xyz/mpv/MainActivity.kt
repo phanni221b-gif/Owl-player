@@ -63,7 +63,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             waitingForAllFiles = true
             AlertDialog.Builder(this)
                 .setTitle("저장소 접근")
-                .setMessage("Apv가 내부 저장소와 외장 SSD의 영상 폴더를 빠르게 찾으려면 모든 파일 접근 권한이 필요합니다.")
+                .setMessage("Owl이 내부 저장소와 외장 SSD의 영상 폴더를 빠르게 찾으려면 모든 파일 접근 권한이 필요합니다.")
                 .setPositiveButton("설정 열기") { _, _ ->
                     val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
                         data = Uri.parse("package:$packageName")
@@ -98,7 +98,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private fun loadFolders() {
         emptyText.text = "영상 폴더를 찾는 중…"
         emptyText.visibility = View.VISIBLE
-        thread(name = "ApvMediaScan") {
+        thread(name = "OwlMediaScan") {
             val folders = MediaLibrary.scan(this)
             runOnUiThread {
                 adapter.submit(folders)
