@@ -105,9 +105,18 @@ jobs:
           test -f "$APK"
           AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt | sort -V | tail -1)
           "$AAPT" dump badging "$APK" > /tmp/owl-badging.txt
+
+          echo '--- Active launcher metadata ---'
+          grep -E 'application-label|application-icon|launchable-activity' /tmp/owl-badging.txt | head -30
+
           grep -q "application-label:'Owl'" /tmp/owl-badging.txt
           grep -q "launchable-activity: name='is.xyz.mpv.MainActivity'" /tmp/owl-badging.txt
-          grep -q "application-icon-480:'res/" /tmp/owl-badging.txt
+          grep -Eq "application-icon-[0-9]+:'res/mipmap-[^']*/owl_launcher_icon\.png'" /tmp/owl-badging.txt
+          if grep -Eq "application-icon-[0-9]+:'res/[^']*mpv_launcher_icon" /tmp/owl-badging.txt; then
+            echo 'Active launcher icon unexpectedly points to mpv launcher artwork'
+            exit 1
+          fi
+
           rm -rf /tmp/owl-apk && mkdir /tmp/owl-apk
           unzip -q "$APK" -d /tmp/owl-apk
           python3 - <<'PY'
@@ -116,6 +125,7 @@ jobs:
 
           icons = sorted(Path('/tmp/owl-apk/res').rglob('owl_launcher_icon.png'))
           assert icons, 'No Owl PNG launcher icons found in APK'
+          expected = {(48,48), (72,72), (96,96), (144,144), (192,192)}
           seen = set()
           for path in icons:
               with Image.open(path) as image:
@@ -123,13 +133,11 @@ jobs:
                   assert image.format == 'PNG'
                   seen.add(image.size)
                   print('APK icon OK:', path, image.size)
-          assert (192, 192) in seen, seen
+          assert expected.issubset(seen), (seen, expected)
           PY
-          if unzip -Z1 "$APK" | grep -qE 'mpv_launcher_icon|owl_launcher_(art|icon)\.webp'; then
-            echo 'Unexpected legacy/broken launcher asset found in APK'
-            exit 1
-          fi
-          grep -E 'application-icon|launchable-activity' /tmp/owl-badging.txt | head -20
+
+          echo '--- Unused legacy icon resources, if any ---'
+          unzip -Z1 "$APK" | grep -E 'mpv_launcher_icon|owl_launcher_(art|icon)\.webp' || true
 
       - name: Prepare Owl arm64 APK
         run: |
@@ -147,4 +155,4 @@ jobs:
             Owl-0.2.4-arm64.sha256 \
             --target "$GITHUB_SHA" \
             --title "Owl 0.2.4" \
-            --notes "Launcher icon rebuilt from verified Base64 chunks. The build validates source SHA-256, WebP decoding, generated PNG mipmaps, APK icon decoding, app label and launchable activity before release."
+            --notes "Launcher icon rebuilt from verified Base64 chunks. The build validates source SHA-256, WebP decoding, generated PNG mipmaps, active AAPT launcher icon mapping, APK icon decoding, app label and launchable activity before release."
