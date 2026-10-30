@@ -18,6 +18,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import java.util.Locale
 import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity(R.layout.activity_main) {
@@ -25,6 +26,8 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private lateinit var emptyText: TextView
     private val adapter = FolderAdapter(::openFolder)
     private var waitingForAllFiles = false
+    private var currentFolders: List<MediaFolder> = emptyList()
+    private var sortMode = SORT_NAME
 
     private val permissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -36,14 +39,17 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         SystemBarInsets.apply(findViewById(R.id.mainRoot))
         ApvSettingsActivity.ensureDefaults(this)
 
+        sortMode = getSharedPreferences(PREFS_UI, MODE_PRIVATE).getInt(KEY_SORT, SORT_NAME)
+
         recycler = findViewById(R.id.folderRecycler)
         emptyText = findViewById(R.id.emptyText)
-        val spanCount = if (resources.configuration.screenWidthDp >= 500) 4 else 3
-        recycler.layoutManager = GridLayoutManager(this, spanCount)
+        recycler.layoutManager = GridLayoutManager(this, 3)
         recycler.adapter = adapter
+        recycler.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateGridSpan() }
+        recycler.post { updateGridSpan() }
 
         findViewById<ImageButton>(R.id.searchButton).setOnClickListener { showSearch() }
-        findViewById<ImageButton>(R.id.refreshButton).setOnClickListener { loadFolders() }
+        findViewById<ImageButton>(R.id.sortButton).setOnClickListener { showSortMenu() }
         findViewById<ImageButton>(R.id.settingsButton).setOnClickListener {
             startActivity(Intent(this, ApvSettingsActivity::class.java))
         }
@@ -57,6 +63,23 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             waitingForAllFiles = false
             ensureAccess()
         }
+        recycler.post { updateGridSpan() }
+    }
+
+    private fun updateGridSpan() {
+        if (!::recycler.isInitialized) return
+        val widthDp = if (recycler.width > 0) {
+            recycler.width / resources.displayMetrics.density
+        } else {
+            resources.configuration.screenWidthDp.toFloat()
+        }
+        val spans = when {
+            widthDp >= 850f -> 5
+            widthDp >= 520f -> 4
+            else -> 3
+        }
+        val manager = recycler.layoutManager as? GridLayoutManager ?: return
+        if (manager.spanCount != spans) manager.spanCount = spans
     }
 
     private fun ensureAccess() {
@@ -102,11 +125,54 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         thread(name = "OwlMediaScan") {
             val folders = MediaLibrary.scan(this)
             runOnUiThread {
-                adapter.submit(folders)
+                currentFolders = folders
+                applySort()
                 emptyText.visibility = if (folders.isEmpty()) View.VISIBLE else View.GONE
                 if (folders.isEmpty()) emptyText.text = "영상이 있는 폴더를 찾지 못했습니다."
             }
         }
+    }
+
+    private fun applySort() {
+        val sorted = when (sortMode) {
+            SORT_COUNT -> currentFolders.sortedWith(
+                compareByDescending<MediaFolder> { it.videos.size }
+                    .thenBy { it.name.lowercase(Locale.getDefault()) }
+            )
+            SORT_RECENT -> currentFolders.sortedWith(
+                compareByDescending<MediaFolder> { it.newestModifiedSeconds }
+                    .thenBy { it.name.lowercase(Locale.getDefault()) }
+            )
+            else -> currentFolders.sortedBy { it.name.lowercase(Locale.getDefault()) }
+        }
+        adapter.submit(sorted)
+    }
+
+    private fun showSortMenu() {
+        val items = arrayOf("이름순", "영상 많은 순", "최근 영상순", "다시 검색")
+        val checked = when (sortMode) {
+            SORT_COUNT -> 1
+            SORT_RECENT -> 2
+            else -> 0
+        }
+        AlertDialog.Builder(this)
+            .setTitle("폴더 정렬")
+            .setSingleChoiceItems(items, checked) { dialog, which ->
+                if (which == 3) {
+                    dialog.dismiss()
+                    loadFolders()
+                    return@setSingleChoiceItems
+                }
+                sortMode = when (which) {
+                    1 -> SORT_COUNT
+                    2 -> SORT_RECENT
+                    else -> SORT_NAME
+                }
+                getSharedPreferences(PREFS_UI, MODE_PRIVATE).edit().putInt(KEY_SORT, sortMode).apply()
+                applySort()
+                dialog.dismiss()
+            }
+            .show()
     }
 
     private fun openFolder(folder: MediaFolder) {
@@ -125,5 +191,13 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             .setNeutralButton("초기화") { _, _ -> adapter.filter("") }
             .setNegativeButton("취소", null)
             .show()
+    }
+
+    companion object {
+        private const val PREFS_UI = "owl_ui"
+        private const val KEY_SORT = "folder_sort"
+        private const val SORT_NAME = 0
+        private const val SORT_COUNT = 1
+        private const val SORT_RECENT = 2
     }
 }
