@@ -1,1 +1,0 @@
-Owl launcher icon is stored as standard Android bitmap resources. No adaptive-icon or Base64 reconstruction pipeline is required.
