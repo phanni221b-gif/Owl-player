@@ -8,8 +8,8 @@
 
     <application
         android:label="Owl"
-        android:icon="@drawable/owl_icon"
-        android:roundIcon="@drawable/owl_icon"
+        android:icon="@mipmap/owl_launcher_icon"
+        android:roundIcon="@mipmap/owl_launcher_icon"
         tools:replace="android:label,android:icon,android:roundIcon">
 
         <activity
