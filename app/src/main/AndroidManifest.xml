@@ -20,10 +20,10 @@
         android:requestLegacyExternalStorage="true"
         android:preserveLegacyExternalStorage="true"
         android:supportsRtl="true"
-        android:icon="@mipmap/mpv_launcher_icon"
-        android:roundIcon="@mipmap/mpv_launcher_icon"
+        android:icon="@mipmap/owl_launcher_icon"
+        android:roundIcon="@mipmap/owl_launcher_icon"
         android:banner="@mipmap/ic_banner"
-        android:label="@string/mpv_activity"
+        android:label="Owl"
         android:appCategory="video"
         android:localeConfig="@xml/locales_config">
 
@@ -211,6 +211,8 @@
             android:name=".MainActivity"
             android:configChanges="orientation|screenSize"
             android:theme="@style/FilePickerTheme"
+            android:icon="@mipmap/owl_launcher_icon"
+            android:label="Owl"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
