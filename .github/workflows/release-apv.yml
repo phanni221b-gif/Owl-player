@@ -15,83 +15,47 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-
       - uses: actions/setup-java@v6
         with:
           java-version: '17'
           distribution: temurin
-
       - name: Export build environment
         run: buildscripts/include/ci.sh export >> $GITHUB_ENV
-
       - uses: actions/cache@v6
         with:
           path: gh-cache/
           key: "${{ env.CACHE_IDENTIFIER }}"
           enableCrossOsArchive: true
-
       - name: Install build packages
         run: |
           sudo apt-get update
           sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip gperf nasm
           sudo pip3 install meson pillow --break-system-packages
-
       - name: Rebuild launcher assets from verified Owl artwork
         run: |
           python3 - <<'PY'
           from pathlib import Path
           from PIL import Image
           import hashlib
-
-          src_path = Path('.github/owl-icon-source/owl_master.jpg')
-          raw = src_path.read_bytes()
-          digest = hashlib.sha256(raw).hexdigest()
-          expected = '03f132040734836bf2aec752204f7be1261bc38614602564ffefa9141c602bca'
-          assert digest == expected, f'Canonical Owl artwork SHA mismatch: {digest}'
-
+          src_path=Path('.github/owl-icon-source/owl_master.jpg')
+          raw=src_path.read_bytes(); digest=hashlib.sha256(raw).hexdigest()
+          assert digest=='03f132040734836bf2aec752204f7be1261bc38614602564ffefa9141c602bca', digest
           with Image.open(src_path) as im:
-              im.load()
-              assert im.format == 'JPEG', im.format
-              assert im.size == (512, 512), im.size
-              src = im.convert('RGBA')
-
-          fg = Path('app/src/main/res/drawable-nodpi/owl_launcher_source.png')
-          fg.parent.mkdir(parents=True, exist_ok=True)
-          src.save(fg, format='PNG', optimize=False)
-
-          sizes = {'mipmap-mdpi':48,'mipmap-hdpi':72,'mipmap-xhdpi':96,'mipmap-xxhdpi':144,'mipmap-xxxhdpi':192}
-          for folder, size in sizes.items():
-              out = Path('app/src/main/res') / folder / 'owl_launcher_icon.png'
-              out.parent.mkdir(parents=True, exist_ok=True)
-              src.resize((size, size), Image.Resampling.LANCZOS).save(out, format='PNG', optimize=False)
-              with Image.open(out) as check:
-                  check.load(); assert check.format == 'PNG' and check.size == (size, size)
-          with Image.open(fg) as check:
-              check.load(); assert check.format == 'PNG' and check.size == (512, 512)
-          print('Canonical Owl artwork:', digest, src.size)
-          print('Generated and decoded all launcher PNGs successfully')
+              im.load(); assert im.format=='JPEG' and im.size==(512,512); src=im.convert('RGBA')
+          fg=Path('app/src/main/res/drawable-nodpi/owl_launcher_source.png'); fg.parent.mkdir(parents=True,exist_ok=True); src.save(fg,'PNG')
+          for folder,size in {'mipmap-mdpi':48,'mipmap-hdpi':72,'mipmap-xhdpi':96,'mipmap-xxhdpi':144,'mipmap-xxxhdpi':192}.items():
+              out=Path('app/src/main/res')/folder/'owl_launcher_icon.png'; out.parent.mkdir(parents=True,exist_ok=True); src.resize((size,size),Image.Resampling.LANCZOS).save(out,'PNG')
+              with Image.open(out) as c: c.load(); assert c.format=='PNG' and c.size==(size,size)
+          with Image.open(fg) as c: c.load(); assert c.format=='PNG' and c.size==(512,512)
+          print('Canonical Owl artwork OK',digest)
           PY
-          rm -f app/src/main/res/drawable-nodpi/owl_icon.webp
-          rm -f app/src/main/res/mipmap-xxxhdpi/owl_launcher_art.webp
-          rm -f app/src/main/res/mipmap-xxxhdpi/owl_launcher_icon.webp
-          rm -f app/src/main/res/mipmap-anydpi-v26/owl_launcher_foreground.xml
-
+          rm -f app/src/main/res/drawable-nodpi/owl_icon.webp app/src/main/res/mipmap-xxxhdpi/owl_launcher_art.webp app/src/main/res/mipmap-xxxhdpi/owl_launcher_icon.webp app/src/main/res/mipmap-anydpi-v26/owl_launcher_foreground.xml
       - name: Verify launcher resource graph before build
         run: |
           grep -q 'android:icon="@mipmap/owl_launcher_icon"' app/src/main/AndroidManifest.xml
           grep -q 'android:roundIcon="@mipmap/owl_launcher_icon"' app/src/main/AndroidManifest.xml
           grep -q '@drawable/owl_launcher_source' app/src/main/res/mipmap-anydpi-v26/owl_launcher_icon.xml
           ! grep -q 'mpv_launcher_icon' app/src/main/AndroidManifest.xml
-          python3 - <<'PY'
-          from pathlib import Path
-          from PIL import Image
-          paths=[Path('app/src/main/res/drawable-nodpi/owl_launcher_source.png')]
-          paths += [Path('app/src/main/res')/d/'owl_launcher_icon.png' for d in ['mipmap-mdpi','mipmap-hdpi','mipmap-xhdpi','mipmap-xxhdpi','mipmap-xxxhdpi']]
-          for p in paths:
-              with Image.open(p) as im:
-                  im.load(); assert im.format == 'PNG'; print(p, im.size, im.mode)
-          PY
-
       - name: Download or build native dependencies
         run: |
           mkdir -p "$CACHE_FOLDER"
@@ -99,10 +63,8 @@ jobs:
         env:
           CACHE_MODE: folder
           CACHE_FOLDER: "${{ github.workspace }}/gh-cache"
-
       - name: Build Owl APKs
         run: DONT_BUILD_RELEASE=1 buildscripts/include/ci.sh build
-
       - name: Verify final APK launcher resources
         run: |
           APK=app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk
@@ -111,25 +73,21 @@ jobs:
           "$AAPT" dump badging "$APK" > /tmp/owl-badging.txt
           grep -q "application-label:'Owl'" /tmp/owl-badging.txt
           grep -q "launchable-activity: name='is.xyz.mpv.MainActivity'" /tmp/owl-badging.txt
-          rm -rf /tmp/owl-apk && mkdir /tmp/owl-apk
-          unzip -q "$APK" -d /tmp/owl-apk
+          rm -rf /tmp/owl-apk && mkdir /tmp/owl-apk && unzip -q "$APK" -d /tmp/owl-apk
           python3 - <<'PY'
           from pathlib import Path
           from PIL import Image
           candidates=sorted(Path('/tmp/owl-apk/res').rglob('owl_launcher_icon.png'))+sorted(Path('/tmp/owl-apk/res').rglob('owl_launcher_source.png'))
-          assert candidates, 'No Owl launcher PNG resources found in finished APK'
+          assert candidates
           for p in candidates:
-              with Image.open(p) as im:
-                  im.load(); assert im.format == 'PNG'; assert im.width>0 and im.height>0; print('APK icon OK:',p,im.size,im.mode)
+              with Image.open(p) as im: im.load(); assert im.format=='PNG'; print('APK icon OK',p,im.size)
           PY
           if unzip -Z1 "$APK" | grep -qE 'owl_launcher_(art|icon)\.webp$'; then exit 1; fi
           grep -E 'application-icon|launchable-activity' /tmp/owl-badging.txt | head -20
-
       - name: Prepare Owl arm64 APK
         run: |
           cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.2.4-arm64.apk
           sha256sum Owl-0.2.4-arm64.apk > Owl-0.2.4-arm64.sha256
-
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
