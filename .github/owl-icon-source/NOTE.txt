@@ -1,1 +1,0 @@
-Standard PNG mipmap icons are now used directly for Owl. This avoids adaptive icon and binary reconstruction issues.
