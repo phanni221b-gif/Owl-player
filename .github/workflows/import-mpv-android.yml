@@ -2,6 +2,9 @@ name: Import mpv-android source
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/import-mpv-android.yml'
 
 permissions:
   contents: write
@@ -28,8 +31,14 @@ jobs:
           git fetch origin main
           git checkout -B main origin/main
 
+          # Replace repository contents with upstream source.
           git rm -r --ignore-unmatch .
           git checkout refs/remotes/upstream/import-snapshot -- .
+
+          # GitHub Actions' GITHUB_TOKEN cannot create/update other workflow files.
+          # Keep this importer unchanged and exclude upstream workflows.
+          git rm -r --ignore-unmatch .github/workflows
+          git checkout HEAD -- .github/workflows/import-mpv-android.yml
 
           git add -A
           git commit -m "Import mpv-android source at f700f6f"
