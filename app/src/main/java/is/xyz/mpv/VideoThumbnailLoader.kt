@@ -28,20 +28,15 @@ object VideoThumbnailLoader {
         executor.execute {
             val context = target.context.applicationContext
             val bitmap = try {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    context.contentResolver.loadThumbnail(Uri.parse(video.uri), Size(320, 180), null)
-                } else {
-                    val retriever = MediaMetadataRetriever()
+                val uri = Uri.parse(video.uri)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && uri.scheme == "content") {
                     try {
-                        if (!video.path.isNullOrBlank()) {
-                            retriever.setDataSource(video.path)
-                        } else {
-                            retriever.setDataSource(context, Uri.parse(video.uri))
-                        }
-                        retriever.frameAtTime
-                    } finally {
-                        retriever.release()
+                        context.contentResolver.loadThumbnail(uri, Size(320, 180), null)
+                    } catch (_: Throwable) {
+                        loadFrameWithRetriever(context, video)
                     }
+                } else {
+                    loadFrameWithRetriever(context, video)
                 }
             } catch (_: Throwable) {
                 null
@@ -51,6 +46,21 @@ object VideoThumbnailLoader {
             target.post {
                 if (target.tag == key && bitmap != null) target.setImageBitmap(bitmap)
             }
+        }
+    }
+
+    private fun loadFrameWithRetriever(context: android.content.Context, video: MediaVideo): Bitmap? {
+        val retriever = MediaMetadataRetriever()
+        return try {
+            if (!video.path.isNullOrBlank()) {
+                retriever.setDataSource(video.path)
+            } else {
+                retriever.setDataSource(context, Uri.parse(video.uri))
+            }
+            retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
+                ?: retriever.frameAtTime
+        } finally {
+            retriever.release()
         }
     }
 }
