@@ -24,6 +24,16 @@ abstract class BaseMPVView(context: Context, attrs: AttributeSet) : SurfaceView(
             MPVLib.setOptionString(opt, cacheDir)
         initOptions()
 
+        val playlistStart = OwlLaunchState.consumePlaylistStartIndex()
+        if (playlistStart >= 0)
+            MPVLib.setOptionString("playlist-start", playlistStart.toString())
+
+        val resumeMs = OwlLaunchState.consumeResumePositionMs()
+        if (resumeMs > 0L) {
+            oneShotStartSeconds = resumeMs / 1000.0
+            MPVLib.setOptionString("start", oneShotStartSeconds.toString())
+        }
+
         MPVLib.init()
 
         /* set hardcoded options */
@@ -55,6 +65,7 @@ abstract class BaseMPVView(context: Context, attrs: AttributeSet) : SurfaceView(
     protected abstract fun observeProperties()
 
     private var filePath: String? = null
+    private var oneShotStartSeconds: Double? = null
 
     /**
      * Set the first file to be played once the player is ready.
@@ -89,6 +100,12 @@ abstract class BaseMPVView(context: Context, attrs: AttributeSet) : SurfaceView(
         if (filePath != null) {
             MPVLib.command(arrayOf("loadfile", filePath as String))
             filePath = null
+            // start is only for the initially selected Owl item. Reset it immediately so
+            // previous/next playlist entries always begin normally.
+            if (oneShotStartSeconds != null) {
+                MPVLib.setOptionString("start", "none")
+                oneShotStartSeconds = null
+            }
         } else {
             // We disable video output when the context disappears, enable it back
             MPVLib.setPropertyString("vo", voInUse)
