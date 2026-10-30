@@ -21,18 +21,21 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     private val adapter = VideoAdapter(::playVideo, ::showVideoActions)
     private lateinit var folderKey: String
     private var currentVideos: List<MediaVideo> = emptyList()
+    private var displayedVideos: List<MediaVideo> = emptyList()
     private var sortMode = SORT_NAME
     private var activeVideo: MediaVideo? = null
 
     private val playerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
-        val video = activeVideo
+        val fallbackVideo = activeVideo
         activeVideo = null
-        if (video != null && result.data != null) {
+        if (result.data != null) {
+            val playedIndex = result.data!!.getIntExtra("playlist_index", -1)
+            val video = displayedVideos.getOrNull(playedIndex) ?: fallbackVideo
             val position = result.data!!.getIntExtra("position", -1)
             val duration = result.data!!.getIntExtra("duration", -1)
-            if (position >= 0) {
+            if (video != null && position >= 0) {
                 PlaybackHistory.save(
                     this,
                     video,
@@ -86,7 +89,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     }
 
     private fun applySort() {
-        val sorted = when (sortMode) {
+        displayedVideos = when (sortMode) {
             SORT_RECENT -> currentVideos.sortedWith(
                 compareByDescending<MediaVideo> { it.modifiedSeconds }
                     .thenBy { it.title.lowercase(Locale.getDefault()) }
@@ -101,7 +104,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
             )
             else -> currentVideos.sortedBy { it.title.lowercase(Locale.getDefault()) }
         }
-        adapter.submit(sorted)
+        adapter.submit(displayedVideos)
     }
 
     private fun showSortMenu() {
@@ -134,15 +137,24 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
 
     private fun playVideo(video: MediaVideo, resume: Boolean) {
         activeVideo = video
+        val startIndex = displayedVideos.indexOfFirst { it.uri == video.uri }.coerceAtLeast(0)
         val history = if (resume && ApvSettingsActivity.isResumeEnabled(this)) {
             PlaybackHistory.get(this, video)
         } else null
+
+        // The exact list currently visible on screen becomes the player playlist.
+        // Therefore Previous/Next always follows the user's selected sort order, top to bottom.
+        OwlLaunchState.playlistStartIndex = startIndex
+        OwlLaunchState.resumePositionMs = history?.positionMs ?: -1L
 
         val playerIntent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(Uri.parse(video.uri), "video/*")
             setClass(this@FolderActivity, MPVActivity::class.java)
             putExtra("title", video.title)
-            history?.let { putExtra("position", it.positionMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()) }
+            putStringArrayListExtra(
+                EXTRA_OWL_PLAYLIST,
+                ArrayList(displayedVideos.map { it.uri })
+            )
         }
         playerLauncher.launch(playerIntent)
     }
@@ -185,6 +197,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     companion object {
         const val EXTRA_FOLDER_KEY = "owl_folder_key"
         const val EXTRA_FOLDER_NAME = "owl_folder_name"
+        const val EXTRA_OWL_PLAYLIST = "owl_playlist_uris"
 
         private const val PREFS_UI = "owl_ui"
         private const val KEY_VIDEO_SORT = "video_sort"
