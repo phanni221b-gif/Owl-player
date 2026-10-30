@@ -105,11 +105,16 @@ jobs:
 
       - name: Remove only proven orphan legacy shell files in workspace
         run: |
-          REFS=$(grep -R -n -E 'MainScreenFragment|fragment_main_screen' app/src/main \
+          # Only structural references count. A historical comment in MPVActivity mentions
+          # MainScreenFragment, but the filepath extra it describes is still used by Owl.
+          REFS=$(grep -R -n \
+            --include='*.kt' --include='*.java' --include='*.xml' \
+            -E 'MainScreenFragment\s*\(|MainScreenFragment::|FragmentMainScreenBinding|R\.layout\.fragment_main_screen|@layout/fragment_main_screen' \
+            app/src/main \
             --exclude='MainScreenFragment.kt' --exclude='fragment_main_screen.xml' || true)
           if [ -n "$REFS" ]; then
             echo "$REFS"
-            echo 'Legacy MainScreenFragment still has references; refusing cleanup.'
+            echo 'Legacy MainScreenFragment still has a structural reference; refusing cleanup.'
             exit 1
           fi
           rm -f app/src/main/java/is/xyz/mpv/MainScreenFragment.kt
