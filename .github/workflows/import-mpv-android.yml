@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Check out target repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
@@ -23,13 +23,13 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
           git remote add upstream https://github.com/mpv-android/mpv-android.git || true
-          git fetch --depth=1 upstream f700f6f740a15e774452603a00acc88d126c2753
+          git fetch --depth=1 upstream f700f6f740a15e774452603a00acc88d126c2753:refs/remotes/upstream/import-snapshot
 
-          git checkout main
-          git pull --ff-only origin main
+          git fetch origin main
+          git checkout -B main origin/main
 
           git rm -r --ignore-unmatch .
-          git checkout FETCH_HEAD -- .
+          git checkout refs/remotes/upstream/import-snapshot -- .
 
           git add -A
           git commit -m "Import mpv-android source at f700f6f"
