@@ -35,25 +35,31 @@ jobs:
           sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip gperf nasm
           sudo pip3 install meson pillow --break-system-packages
 
-      - name: Set Owl 0.3.2 version
+      - name: Set Owl 0.3.3 version
         run: |
-          sed -i 's/versionCode 55/versionCode 57/' app/build.gradle
-          sed -i 's/versionName "0.3.0"/versionName "0.3.2"/' app/build.gradle
-          grep -q 'versionCode 57' app/build.gradle
-          grep -q 'versionName "0.3.2"' app/build.gradle
+          sed -i 's/versionCode 55/versionCode 58/' app/build.gradle
+          sed -i 's/versionName "0.3.0"/versionName "0.3.3"/' app/build.gradle
+          grep -q 'versionCode 58' app/build.gradle
+          grep -q 'versionName "0.3.3"' app/build.gradle
 
-      - name: Verify Owl 0.3.2 player feature sources
+      - name: Verify Owl 0.3.3 player feature sources
         run: |
           grep -q 'videoAutoRotate' app/src/main/res/layout/activity_apv_settings.xml
           grep -q 'screenModeBtn' app/src/main/res/layout/player.xml
+          grep -q 'controls_button_row' app/src/main/res/layout/player.xml
+          grep -q 'android:id="@+id/prevBtn"' app/src/main/res/layout/player.xml
+          grep -q 'android:id="@+id/nextBtn"' app/src/main/res/layout/player.xml
           grep -q 'getStringArrayListExtra("owl_playlist_uris")' app/src/main/java/is/xyz/mpv/MPVActivity.kt
           grep -q 'Utils.makeMemoryPlaylist(paths)' app/src/main/java/is/xyz/mpv/MPVActivity.kt
           grep -q 'playlist_index' app/src/main/java/is/xyz/mpv/MPVActivity.kt
           grep -q 'playlist-start' app/src/main/java/is/xyz/mpv/BaseMPVView.kt
           grep -q 'displayedVideos' app/src/main/java/is/xyz/mpv/FolderActivity.kt
           grep -q 'EXTRA_OWL_PLAYLIST' app/src/main/java/is/xyz/mpv/FolderActivity.kt
-          grep -q 'video-zoom' app/src/main/java/is/xyz/mpv/TouchGestures.kt
-          grep -q 'video-pan-x' app/src/main/java/is/xyz/mpv/TouchGestures.kt
+          grep -q 'PAN_SENSITIVITY = 0.55' app/src/main/java/is/xyz/mpv/TouchGestures.kt
+          grep -q 'PAN_JITTER_DEADZONE_FRACTION' app/src/main/java/is/xyz/mpv/TouchGestures.kt
+          grep -q 'video-align-x' app/src/main/java/is/xyz/mpv/TouchGestures.kt
+          grep -q 'video-align-y' app/src/main/java/is/xyz/mpv/TouchGestures.kt
+          grep -q 'video-recenter' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'SCREEN_MODE_FILL' app/src/main/java/is/xyz/mpv/MPVActivity.kt
 
       - name: Restore and force stable Owl development signing key
@@ -190,18 +196,18 @@ jobs:
 
       - name: Prepare Owl arm64 APK
         run: |
-          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.3.2-arm64.apk
-          sha256sum Owl-0.3.2-arm64.apk > Owl-0.3.2-arm64.sha256
+          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.3.3-arm64.apk
+          sha256sum Owl-0.3.3-arm64.apk > Owl-0.3.3-arm64.sha256
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v0.3.2 --yes 2>/dev/null || true
-          git push origin :refs/tags/v0.3.2 2>/dev/null || true
-          gh release create v0.3.2 \
-            Owl-0.3.2-arm64.apk \
-            Owl-0.3.2-arm64.sha256 \
+          gh release delete v0.3.3 --yes 2>/dev/null || true
+          git push origin :refs/tags/v0.3.3 2>/dev/null || true
+          gh release create v0.3.3 \
+            Owl-0.3.3-arm64.apk \
+            Owl-0.3.3-arm64.sha256 \
             --target "$GITHUB_SHA" \
-            --title "Owl 0.3.2" \
-            --notes "Playback controls update. Adds video-aware auto-rotation toggle; MX-style screen modes (fit, aspect-preserving fill/crop, stretch-to-fill, original 100%); Previous/Next navigation using the exact current Folder screen sort order from top to bottom; two-finger pinch zoom up to 8x and two-finger pan while zoomed, recentering at fitted size. Retains HW+ -> HW -> SW Auto decoding, stable Owl signing key, Hermes-orange UI, subtitles, upscaling and foldable resizing."
+            --title "Owl 0.3.3" \
+            --notes "Two-finger pan refinement. Reduces pan sensitivity to 55%, adds a small accumulated jitter deadzone so fingertip wobble does not shake the picture, and switches bounded movement to mpv video-align with recentering so the enlarged picture cannot drift beyond the video/window boundary. Previous/Next remain fixed at the far left/right of the lower control-button row while the seek bar stays clean. Retains sorted playlist navigation, pinch zoom up to 8x, auto-rotation, screen modes, HW+ -> HW -> SW Auto decoding, subtitles, upscaling, stable signing and foldable resizing."
