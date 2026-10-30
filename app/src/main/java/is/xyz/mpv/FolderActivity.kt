@@ -3,7 +3,6 @@ package `is`.xyz.mpv
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.ImageButton
@@ -142,22 +141,18 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
             PlaybackHistory.get(this, video)
         } else null
 
-        // The exact list currently visible on screen becomes the player playlist.
-        // Therefore Previous/Next always follows the user's selected sort order, top to bottom.
-        OwlLaunchState.playlistStartIndex = startIndex
-        OwlLaunchState.resumePositionMs = -1L
+        // Use the exact order currently shown on screen. If the user selected name/recent/
+        // duration/size sorting, Previous and Next follow that visible top-to-bottom order.
+        val playlistEntries = displayedVideos.map { media ->
+            media.path?.takeIf { it.isNotBlank() } ?: media.uri
+        }
+        val memoryPlaylist = Utils.makeMemoryPlaylist(playlistEntries)
 
-        val playerIntent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(Uri.parse(video.uri), "video/*")
-            setClass(this@FolderActivity, MPVActivity::class.java)
-            putExtra("title", video.title)
-            history?.let {
-                putExtra("position", it.positionMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
-            }
-            putStringArrayListExtra(
-                EXTRA_OWL_PLAYLIST,
-                ArrayList(displayedVideos.map { it.uri })
-            )
+        OwlLaunchState.playlistStartIndex = startIndex
+        OwlLaunchState.resumePositionMs = history?.positionMs ?: -1L
+
+        val playerIntent = Intent(this, MPVActivity::class.java).apply {
+            putExtra("filepath", memoryPlaylist)
         }
         playerLauncher.launch(playerIntent)
     }
@@ -200,7 +195,6 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     companion object {
         const val EXTRA_FOLDER_KEY = "owl_folder_key"
         const val EXTRA_FOLDER_NAME = "owl_folder_name"
-        const val EXTRA_OWL_PLAYLIST = "owl_playlist_uris"
 
         private const val PREFS_UI = "owl_ui"
         private const val KEY_VIDEO_SORT = "video_sort"
