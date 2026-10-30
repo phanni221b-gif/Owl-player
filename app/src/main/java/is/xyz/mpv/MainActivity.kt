@@ -33,6 +33,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        SystemBarInsets.apply(findViewById(R.id.mainRoot))
         ApvSettingsActivity.ensureDefaults(this)
 
         recycler = findViewById(R.id.folderRecycler)
