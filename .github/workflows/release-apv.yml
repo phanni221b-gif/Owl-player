@@ -1,5 +1,5 @@
 name: Release Owl
-# binary source must exist before this workflow runs
+# binary source is attached to main; verified build trigger
 on:
   push:
     paths:
