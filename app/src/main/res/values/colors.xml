@@ -4,6 +4,8 @@
     <item name="primary_dark" type="color">@color/primary</item>
     <item name="accent" type="color">@color/primary</item>
 
+    <color name="owl_launcher_background">#FFF9EE</color>
+
     <color name="tint_normal">#ffffff</color>
     <color name="tint_disabled">#3c3c3c</color>
 
@@ -16,8 +18,6 @@
 
     <color name="tint_seekbar_bg">#8A8A8A</color>
 
-    <!-- 12% black in LIGHT THEME -->
     <color name="nnf_light_separator_color">#1e000000</color>
-    <!-- 12% white in BLACK THEME -->
     <color name="nnf_dark_separator_color">#1effffff</color>
 </resources>
