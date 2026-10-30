@@ -11,6 +11,8 @@ import androidx.appcompat.app.AppCompatActivity
 class ApvSettingsActivity : AppCompatActivity(R.layout.activity_apv_settings) {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SystemBarInsets.apply(findViewById(R.id.settingsRoot))
+
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
 
         findViewById<ImageButton>(R.id.settingsBackButton).setOnClickListener { finish() }
@@ -50,7 +52,6 @@ class ApvSettingsActivity : AppCompatActivity(R.layout.activity_apv_settings) {
             if (!prefs.contains("hardware_decoding")) {
                 prefs.edit().putBoolean("hardware_decoding", true).apply()
             }
-            // Never trade decode quality for speed by default.
             prefs.edit().putBoolean("video_fastdecode", false).apply()
         }
 
