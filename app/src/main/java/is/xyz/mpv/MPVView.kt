@@ -28,11 +28,19 @@ internal class MPVView(context: Context, attrs: AttributeSet) : BaseMPVView(cont
         else
             "gpu")
 
-        // hwdec
-        val hwdec = if (sharedPreferences.getBoolean("hardware_decoding", true))
-            HWDECS
-        else
-            "no"
+        // Owl decoder modes:
+        // Auto: HW+ (direct MediaCodec) -> HW (copy-back MediaCodec) -> SW fallback.
+        // HW+: direct hardware decoding, HW: copy-back hardware decoding, SW: CPU only.
+        val decoderMode = sharedPreferences.getString(
+            ApvSettingsActivity.KEY_DECODER_MODE,
+            ApvSettingsActivity.DECODER_AUTO
+        )
+        val hwdec = when (decoderMode) {
+            ApvSettingsActivity.DECODER_HW_PLUS -> HW_PLUS
+            ApvSettingsActivity.DECODER_HW -> HW
+            ApvSettingsActivity.DECODER_SW -> "no"
+            else -> HW_AUTO
+        }
 
         // vo: set display fps as reported by android
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -351,7 +359,7 @@ internal class MPVView(context: Context, attrs: AttributeSet) : BaseMPVView(cont
     fun cyclePause() = MPVLib.command(arrayOf("cycle", "pause"))
     fun cycleAudio() = MPVLib.command(arrayOf("cycle", "audio"))
     fun cycleSub() = MPVLib.command(arrayOf("cycle", "sub"))
-    fun cycleHwdec() = MPVLib.command(arrayOf("cycle-values", "hwdec", HWDECS, "no"))
+    fun cycleHwdec() = MPVLib.command(arrayOf("cycle-values", "hwdec", HW_AUTO, HW_PLUS, HW, "no"))
 
     fun cycleSpeed() {
         val speeds = arrayOf(0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0)
@@ -397,7 +405,11 @@ internal class MPVView(context: Context, attrs: AttributeSet) : BaseMPVView(cont
     companion object {
         private const val TAG = "mpv"
 
-        // mpv option `hwdec` is set to this
-        private const val HWDECS = "mediacodec,mediacodec-copy"
+        // Direct MediaCodec is the Owl equivalent of MX-style HW+.
+        private const val HW_PLUS = "mediacodec"
+        // Copy-back MediaCodec prioritizes compatibility and is Owl's HW mode.
+        private const val HW = "mediacodec-copy"
+        // Auto tries HW+ first, then HW; mpv falls back to software if neither can be used.
+        private const val HW_AUTO = "$HW_PLUS,$HW"
     }
 }
