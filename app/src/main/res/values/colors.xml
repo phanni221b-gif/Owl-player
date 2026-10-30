@@ -1,8 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <item name="primary" type="color">#722b72</item>
-    <item name="primary_dark" type="color">@color/primary</item>
-    <item name="accent" type="color">@color/primary</item>
+    <!-- Owl brand palette: Hermès Orange Boîte inspired -->
+    <item name="primary" type="color">#F37021</item>
+    <item name="primary_dark" type="color">#D95E12</item>
+    <item name="accent" type="color">#F37021</item>
+    <color name="owl_orange">#F37021</color>
+    <color name="owl_orange_dark">#D95E12</color>
+    <color name="owl_orange_container">#FFE3D0</color>
+    <color name="owl_on_orange">#FFFFFFFF</color>
 
     <color name="owl_launcher_background">#FFF9EE</color>
 
@@ -14,7 +19,7 @@
     <color name="alpha12pct">#1e000000</color>
 
     <color name="tint_btn_bg_nofocus">#00000000</color>
-    <color name="tint_btn_bg_focused">#807F7FB2</color>
+    <color name="tint_btn_bg_focused">#80F37021</color>
 
     <color name="tint_seekbar_bg">#8A8A8A</color>
 
