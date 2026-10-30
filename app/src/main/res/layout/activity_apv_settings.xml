@@ -112,15 +112,56 @@
                 android:textColor="?android:attr/textColorPrimary" />
         </RadioGroup>
 
-        <CheckBox
-            android:id="@+id/hardwareDecode"
+        <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:minHeight="64dp"
+            android:layout_marginTop="18dp"
             android:paddingStart="20dp"
             android:paddingEnd="20dp"
-            android:text="하드웨어 디코딩 우선\n렉·발열·배터리 사용을 줄이고 지원되지 않으면 소프트웨어로 대체"
-            android:textColor="?android:attr/textColorPrimary" />
+            android:text="디코더"
+            android:textColor="@color/owl_orange_dark"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <RadioGroup
+            android:id="@+id/decoderModes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp">
+
+            <RadioButton
+                android:id="@+id/decoderAuto"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="68dp"
+                android:text="자동 — 권장\nHW+ → HW → SW 순서로 시도"
+                android:textColor="?android:attr/textColorPrimary" />
+
+            <RadioButton
+                android:id="@+id/decoderHwPlus"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="64dp"
+                android:text="HW+ — MediaCodec Direct\n최저 CPU 사용과 빠른 고해상도 재생 우선"
+                android:textColor="?android:attr/textColorPrimary" />
+
+            <RadioButton
+                android:id="@+id/decoderHw"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="64dp"
+                android:text="HW — MediaCodec Copy\n호환성 우선 하드웨어 디코딩"
+                android:textColor="?android:attr/textColorPrimary" />
+
+            <RadioButton
+                android:id="@+id/decoderSw"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:minHeight="64dp"
+                android:text="SW — CPU\n하드웨어 디코딩 문제가 있는 영상용"
+                android:textColor="?android:attr/textColorPrimary" />
+        </RadioGroup>
 
         <TextView
             android:layout_width="match_parent"
