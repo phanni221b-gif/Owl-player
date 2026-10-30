@@ -17,6 +17,18 @@ class ApvSettingsActivity : AppCompatActivity(R.layout.activity_apv_settings) {
 
         findViewById<ImageButton>(R.id.settingsBackButton).setOnClickListener { finish() }
 
+        findViewById<CheckBox>(R.id.resumePlayback).apply {
+            isChecked = prefs.getBoolean(KEY_RESUME, true)
+            setOnCheckedChangeListener { _, checked ->
+                prefs.edit().putBoolean(KEY_RESUME, checked).apply()
+            }
+        }
+
+        findViewById<CheckBox>(R.id.mxGestures).apply {
+            isChecked = isMxGesturesEnabled(this@ApvSettingsActivity)
+            setOnCheckedChangeListener { _, checked -> applyMxGestures(this@ApvSettingsActivity, checked) }
+        }
+
         val modes = findViewById<RadioGroup>(R.id.upscaleModes)
         when (prefs.getString(KEY_MODE, MODE_BALANCED)) {
             MODE_SHARP -> modes.check(R.id.upscaleSharp)
@@ -42,6 +54,7 @@ class ApvSettingsActivity : AppCompatActivity(R.layout.activity_apv_settings) {
 
     companion object {
         private const val KEY_MODE = "apv_upscale_mode"
+        private const val KEY_RESUME = "owl_resume_playback"
         private const val MODE_BALANCED = "balanced"
         private const val MODE_SHARP = "sharp"
         private const val MODE_ULTRA = "ultra"
@@ -49,10 +62,56 @@ class ApvSettingsActivity : AppCompatActivity(R.layout.activity_apv_settings) {
         fun ensureDefaults(context: Context) {
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
             if (!prefs.contains(KEY_MODE)) applyMode(context, MODE_BALANCED)
-            if (!prefs.contains("hardware_decoding")) {
-                prefs.edit().putBoolean("hardware_decoding", true).apply()
+
+            val edit = prefs.edit()
+            if (!prefs.contains("hardware_decoding")) edit.putBoolean("hardware_decoding", true)
+            if (!prefs.contains(KEY_RESUME)) edit.putBoolean(KEY_RESUME, true)
+            if (!prefs.contains("display_media_title")) edit.putBoolean("display_media_title", true)
+            if (!prefs.contains("bottom_controls")) edit.putBoolean("bottom_controls", true)
+            if (!prefs.contains("playlist_exit_warning")) edit.putBoolean("playlist_exit_warning", false)
+            edit.putBoolean("video_fastdecode", false).apply()
+
+            if (!prefs.contains("gesture_tap_left") ||
+                !prefs.contains("gesture_tap_center") ||
+                !prefs.contains("gesture_tap_right")) {
+                applyMxGestures(context, true)
             }
-            prefs.edit().putBoolean("video_fastdecode", false).apply()
+        }
+
+        fun isResumeEnabled(context: Context): Boolean =
+            PreferenceManager.getDefaultSharedPreferences(context).getBoolean(KEY_RESUME, true)
+
+        private fun isMxGesturesEnabled(context: Context): Boolean {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+            return prefs.getString("gesture_horiz", "seek") == "seek" &&
+                prefs.getString("gesture_vert_left", "bright") == "bright" &&
+                prefs.getString("gesture_vert_right", "volume") == "volume" &&
+                prefs.getString("gesture_tap_left", "seek") == "seek" &&
+                prefs.getString("gesture_tap_center", "playpause") == "playpause" &&
+                prefs.getString("gesture_tap_right", "seek") == "seek"
+        }
+
+        private fun applyMxGestures(context: Context, enabled: Boolean) {
+            val prefs = PreferenceManager.getDefaultSharedPreferences(context)
+            if (enabled) {
+                prefs.edit()
+                    .putString("gesture_horiz", "seek")
+                    .putString("gesture_vert_left", "bright")
+                    .putString("gesture_vert_right", "volume")
+                    .putString("gesture_tap_left", "seek")
+                    .putString("gesture_tap_center", "playpause")
+                    .putString("gesture_tap_right", "seek")
+                    .apply()
+            } else {
+                prefs.edit()
+                    .putString("gesture_horiz", "none")
+                    .putString("gesture_vert_left", "none")
+                    .putString("gesture_vert_right", "none")
+                    .putString("gesture_tap_left", "none")
+                    .putString("gesture_tap_center", "none")
+                    .putString("gesture_tap_right", "none")
+                    .apply()
+            }
         }
 
         private fun applyMode(context: Context, mode: String) {
