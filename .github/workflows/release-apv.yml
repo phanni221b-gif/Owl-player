@@ -45,12 +45,13 @@ jobs:
       - name: Verify Owl 0.3.2 player feature sources
         run: |
           grep -q 'videoAutoRotate' app/src/main/res/layout/activity_apv_settings.xml
-          grep -q 'screenModeBtn' app/src/main/res/layout/player.xml
-          grep -q 'FolderActivity.EXTRA_OWL_PLAYLIST' app/src/main/java/is/xyz/mpv/MPVActivity.kt
-          grep -q 'playlist_index' app/src/main/java/is/xyz/mpv/MPVActivity.kt
+          grep -q 'ScreenModeButton' app/src/main/res/layout/player.xml
+          grep -q 'playlist-start' app/src/main/java/is/xyz/mpv/BaseMPVView.kt
+          grep -q 'makeMemoryPlaylist' app/src/main/java/is/xyz/mpv/FolderActivity.kt
+          grep -q 'displayedVideos' app/src/main/java/is/xyz/mpv/FolderActivity.kt
           grep -q 'video-zoom' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'video-pan-x' app/src/main/java/is/xyz/mpv/TouchGestures.kt
-          grep -q 'displayedVideos' app/src/main/java/is/xyz/mpv/FolderActivity.kt
+          grep -q 'class ScreenModeButton' app/src/main/java/is/xyz/mpv/ScreenModeButton.kt
 
       - name: Restore and force stable Owl development signing key
         run: |
@@ -200,4 +201,4 @@ jobs:
             Owl-0.3.2-arm64.sha256 \
             --target "$GITHUB_SHA" \
             --title "Owl 0.3.2" \
-            --notes "Playback controls update. Adds video-aware auto-rotation toggle; MX-style screen modes (fit, aspect-preserving fill/crop, stretch-to-fill, original 100%); Previous/Next navigation using the exact current Folder screen sort order from top to bottom; two-finger pinch zoom up to 8x and two-finger pan while zoomed, recentering at fitted size. Retains HW+ -> HW -> SW Auto decoding, stable Owl signing key, Hermes-orange UI, subtitles, upscaling and foldable resizing."
+            --notes "Playback controls update. Adds video-aware auto-rotation toggle; MX-style screen modes (fit, aspect-preserving fill/crop, stretch-to-fill); Previous/Next navigation using the exact current Folder screen sort order from top to bottom; two-finger pinch zoom up to 8x and two-finger pan while zoomed, recentering at fitted size. Retains HW+ -> HW -> SW Auto decoding, stable Owl signing key, Hermes-orange UI, subtitles, upscaling and foldable resizing."
