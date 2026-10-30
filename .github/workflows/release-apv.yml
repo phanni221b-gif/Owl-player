@@ -35,11 +35,16 @@ jobs:
           sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip gperf nasm
           sudo pip3 install meson pillow --break-system-packages
 
-      - name: Verify Owl 0.4.0 source state
+      - name: Verify Owl 0.4.1 source state
         run: |
-          grep -q 'versionCode 61' app/build.gradle
-          grep -q 'versionName "0.4.0"' app/build.gradle
+          grep -q 'versionCode 62' app/build.gradle
+          grep -q 'versionName "0.4.1"' app/build.gradle
+          grep -q 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0' app/build.gradle
           grep -q 'storeFile file(System.getProperty("user.home") + "/.android/debug.keystore")' app/build.gradle
+          grep -q 'mainSwipeRefresh' app/src/main/java/is/xyz/mpv/MainActivity.kt
+          grep -q 'folderSwipeRefresh' app/src/main/java/is/xyz/mpv/FolderActivity.kt
+          grep -q 'addDirectExternalVolumes' app/src/main/java/is/xyz/mpv/MediaLibrary.kt
+          grep -q 'storageVolumes' app/src/main/java/is/xyz/mpv/MediaLibrary.kt
           test ! -e app/src/main/java/is/xyz/mpv/MainScreenFragment.kt
           test ! -e app/src/main/res/layout/fragment_main_screen.xml
           grep -q 'R.id.cycleSubsBtn, R.id.prevBtn' app/src/main/java/is/xyz/mpv/MPVActivity.kt
@@ -160,16 +165,16 @@ jobs:
 
       - name: Prepare Owl arm64 APK
         run: |
-          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.4.0-arm64.apk
-          sha256sum Owl-0.4.0-arm64.apk > Owl-0.4.0-arm64.sha256
+          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.4.1-arm64.apk
+          sha256sum Owl-0.4.1-arm64.apk > Owl-0.4.1-arm64.sha256
 
-      - name: Preserve Owl 0.4.0 APK artifact
+      - name: Preserve Owl 0.4.1 APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Owl-0.4.0-arm64
+          name: Owl-0.4.1-arm64
           path: |
-            Owl-0.4.0-arm64.apk
-            Owl-0.4.0-arm64.sha256
+            Owl-0.4.1-arm64.apk
+            Owl-0.4.1-arm64.sha256
           if-no-files-found: error
           retention-days: 30
 
@@ -177,11 +182,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v0.4.0 --yes 2>/dev/null || true
-          git push origin :refs/tags/v0.4.0 2>/dev/null || true
-          gh release create v0.4.0 \
-            Owl-0.4.0-arm64.apk \
-            Owl-0.4.0-arm64.sha256 \
+          gh release delete v0.4.1 --yes 2>/dev/null || true
+          git push origin :refs/tags/v0.4.1 2>/dev/null || true
+          gh release create v0.4.1 \
+            Owl-0.4.1-arm64.apk \
+            Owl-0.4.1-arm64.sha256 \
             --target "$GITHUB_SHA" \
-            --title "Owl 0.4.0" \
-            --notes "Clean Owl shell build. Playback core, JNI, FFmpeg, libass, libplacebo, mpv rendering, HW decoding, subtitles and scaling remain protected against accidental changes. Obsolete patch/import/icon-recovery workflows and the unused legacy mpv home screen were removed. The stable Previous/Next UI fix and Owl signing configuration are now part of the source instead of build-time patches."
+            --title "Owl 0.4.1" \
+            --notes "External-storage update. Owl now falls back to direct discovery of a mounted removable drive when Samsung/Android MediaStore fails to index it, while avoiding a full SSD crawl when MediaStore already sees the drive. Pull-to-refresh is available on the home folder grid and inside folders. Directly discovered videos also support thumbnails. The protected mpv playback core, JNI, FFmpeg, libass, libplacebo, HW decoding, subtitles and scaling remain unchanged."
