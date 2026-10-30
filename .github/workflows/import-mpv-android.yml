@@ -5,6 +5,7 @@ on:
   push:
     paths:
       - '.github/workflows/import-mpv-android.yml'
+  pull_request:
 
 permissions:
   contents: write
@@ -25,11 +26,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git remote add upstream https://github.com/mpv-android/mpv-android.git
+          git remote add upstream https://github.com/mpv-android/mpv-android.git || true
           git fetch --depth=1 upstream f700f6f740a15e774452603a00acc88d126c2753
 
-          # Remove the temporary bootstrap files/workflow, then replace the tree
-          # with the exact upstream snapshot. The upstream MIT LICENSE is retained.
+          git checkout main
+          git pull --ff-only origin main
+
           git rm -r --ignore-unmatch .
           git checkout FETCH_HEAD -- .
 
