@@ -35,12 +35,22 @@ jobs:
           sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip gperf nasm
           sudo pip3 install meson pillow --break-system-packages
 
-      - name: Set Owl 0.3.1 version
+      - name: Set Owl 0.3.2 version
         run: |
-          sed -i 's/versionCode 55/versionCode 56/' app/build.gradle
-          sed -i 's/versionName "0.3.0"/versionName "0.3.1"/' app/build.gradle
-          grep -q 'versionCode 56' app/build.gradle
-          grep -q 'versionName "0.3.1"' app/build.gradle
+          sed -i 's/versionCode 55/versionCode 57/' app/build.gradle
+          sed -i 's/versionName "0.3.0"/versionName "0.3.2"/' app/build.gradle
+          grep -q 'versionCode 57' app/build.gradle
+          grep -q 'versionName "0.3.2"' app/build.gradle
+
+      - name: Verify Owl 0.3.2 player feature sources
+        run: |
+          grep -q 'videoAutoRotate' app/src/main/res/layout/activity_apv_settings.xml
+          grep -q 'screenModeBtn' app/src/main/res/layout/player.xml
+          grep -q 'FolderActivity.EXTRA_OWL_PLAYLIST' app/src/main/java/is/xyz/mpv/MPVActivity.kt
+          grep -q 'playlist_index' app/src/main/java/is/xyz/mpv/MPVActivity.kt
+          grep -q 'video-zoom' app/src/main/java/is/xyz/mpv/TouchGestures.kt
+          grep -q 'video-pan-x' app/src/main/java/is/xyz/mpv/TouchGestures.kt
+          grep -q 'displayedVideos' app/src/main/java/is/xyz/mpv/FolderActivity.kt
 
       - name: Restore and force stable Owl development signing key
         run: |
@@ -176,18 +186,18 @@ jobs:
 
       - name: Prepare Owl arm64 APK
         run: |
-          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.3.1-arm64.apk
-          sha256sum Owl-0.3.1-arm64.apk > Owl-0.3.1-arm64.sha256
+          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.3.2-arm64.apk
+          sha256sum Owl-0.3.2-arm64.apk > Owl-0.3.2-arm64.sha256
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v0.3.1 --yes 2>/dev/null || true
-          git push origin :refs/tags/v0.3.1 2>/dev/null || true
-          gh release create v0.3.1 \
-            Owl-0.3.1-arm64.apk \
-            Owl-0.3.1-arm64.sha256 \
+          gh release delete v0.3.2 --yes 2>/dev/null || true
+          git push origin :refs/tags/v0.3.2 2>/dev/null || true
+          gh release create v0.3.2 \
+            Owl-0.3.2-arm64.apk \
+            Owl-0.3.2-arm64.sha256 \
             --target "$GITHUB_SHA" \
-            --title "Owl 0.3.1" \
-            --notes "Decoder update: Auto explicitly prioritizes HW+ (MediaCodec direct), then HW (MediaCodec copy), then software fallback. Settings expose Auto/HW+/HW/SW. This is the first Owl release forced to the stable Owl development signing key; CI compares the certificate inside the finished APK against the certificate exported from that keystore before publishing. Older Owl releases used ephemeral GitHub Actions debug signing, so uninstall the currently installed older Owl once before installing 0.3.1. Future releases signed with this same key can update in place."
+            --title "Owl 0.3.2" \
+            --notes "Playback controls update. Adds video-aware auto-rotation toggle; MX-style screen modes (fit, aspect-preserving fill/crop, stretch-to-fill, original 100%); Previous/Next navigation using the exact current Folder screen sort order from top to bottom; two-finger pinch zoom up to 8x and two-finger pan while zoomed, recentering at fitted size. Retains HW+ -> HW -> SW Auto decoding, stable Owl signing key, Hermes-orange UI, subtitles, upscaling and foldable resizing."
