@@ -72,6 +72,9 @@ class ScreenModeButton @JvmOverloads constructor(
         MPVLib.setPropertyDouble("video-zoom", 0.0)
         MPVLib.setPropertyDouble("video-pan-x", 0.0)
         MPVLib.setPropertyDouble("video-pan-y", 0.0)
+        MPVLib.setPropertyDouble("video-align-x", 0.0)
+        MPVLib.setPropertyDouble("video-align-y", 0.0)
+        MPVLib.setPropertyBoolean("video-recenter", true)
 
         when (mode) {
             Mode.FIT -> {
