@@ -24,6 +24,13 @@ class ApvSettingsActivity : AppCompatActivity(R.layout.activity_apv_settings) {
             }
         }
 
+        findViewById<CheckBox>(R.id.videoAutoRotate).apply {
+            isChecked = prefs.getString("auto_rotation", "auto") == "auto"
+            setOnCheckedChangeListener { _, checked ->
+                prefs.edit().putString("auto_rotation", if (checked) "auto" else "device").apply()
+            }
+        }
+
         findViewById<CheckBox>(R.id.mxGestures).apply {
             isChecked = isMxGesturesEnabled(this@ApvSettingsActivity)
             setOnCheckedChangeListener { _, checked -> applyMxGestures(this@ApvSettingsActivity, checked) }
@@ -87,6 +94,7 @@ class ApvSettingsActivity : AppCompatActivity(R.layout.activity_apv_settings) {
             if (!prefs.contains(KEY_DECODER_MODE)) edit.putString(KEY_DECODER_MODE, DECODER_AUTO)
             if (!prefs.contains("hardware_decoding")) edit.putBoolean("hardware_decoding", true)
             if (!prefs.contains(KEY_RESUME)) edit.putBoolean(KEY_RESUME, true)
+            if (!prefs.contains("auto_rotation")) edit.putString("auto_rotation", "auto")
             if (!prefs.contains("display_media_title")) edit.putBoolean("display_media_title", true)
             if (!prefs.contains("bottom_controls")) edit.putBoolean("bottom_controls", true)
             if (!prefs.contains("playlist_exit_warning")) edit.putBoolean("playlist_exit_warning", false)
