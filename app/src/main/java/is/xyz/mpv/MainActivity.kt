@@ -20,6 +20,7 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.content.ContextCompat
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import java.io.File
 import java.util.Locale
 import kotlin.concurrent.thread
@@ -27,6 +28,7 @@ import kotlin.concurrent.thread
 class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private lateinit var recycler: RecyclerView
     private lateinit var emptyText: TextView
+    private lateinit var swipeRefresh: SwipeRefreshLayout
     private val adapter = FolderAdapter(::openFolder, ::onFolderSelectionChanged)
     private var waitingForAllFiles = false
     private var currentFolders: List<MediaFolder> = emptyList()
@@ -62,10 +64,12 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
 
         recycler = findViewById(R.id.folderRecycler)
         emptyText = findViewById(R.id.emptyText)
+        swipeRefresh = findViewById(R.id.mainSwipeRefresh)
         recycler.layoutManager = GridLayoutManager(this, 3)
         recycler.adapter = adapter
         recycler.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateGridSpan() }
         recycler.post { updateGridSpan() }
+        swipeRefresh.setOnRefreshListener { loadFolders(showLoadingText = false) }
 
         findViewById<ImageButton>(R.id.searchButton).setOnClickListener { showSearch() }
         findViewById<ImageButton>(R.id.sortButton).setOnClickListener { showSortMenu() }
@@ -98,6 +102,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         findViewById<View>(R.id.mainToolbar).visibility = if (count == 0) View.VISIBLE else View.GONE
         findViewById<View>(R.id.mainSelectionBar).visibility = if (count == 0) View.GONE else View.VISIBLE
         findViewById<TextView>(R.id.mainSelectionCount).text = "${count}개 선택"
+        if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = count == 0
     }
 
     private fun updateGridSpan() {
@@ -153,9 +158,11 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private fun hasAllFilesAccess(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
 
-    private fun loadFolders() {
-        emptyText.text = "영상 폴더를 찾는 중…"
-        emptyText.visibility = View.VISIBLE
+    private fun loadFolders(showLoadingText: Boolean = true) {
+        if (showLoadingText) {
+            emptyText.text = "영상 폴더를 찾는 중…"
+            emptyText.visibility = View.VISIBLE
+        }
         thread(name = "OwlMediaScan") {
             val folders = MediaLibrary.scan(this)
             runOnUiThread {
@@ -163,6 +170,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
                 applySort()
                 emptyText.visibility = if (folders.isEmpty()) View.VISIBLE else View.GONE
                 if (folders.isEmpty()) emptyText.text = "영상이 있는 폴더를 찾지 못했습니다."
+                swipeRefresh.isRefreshing = false
             }
         }
     }
