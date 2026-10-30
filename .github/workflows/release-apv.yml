@@ -35,139 +35,58 @@ jobs:
           sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip gperf nasm
           sudo pip3 install meson pillow --break-system-packages
 
-      - name: Set Owl 0.4.0 version
+      - name: Verify Owl 0.4.0 source state
         run: |
-          sed -i 's/versionCode 55/versionCode 61/' app/build.gradle
-          sed -i 's/versionName "0.3.0"/versionName "0.4.0"/' app/build.gradle
           grep -q 'versionCode 61' app/build.gradle
           grep -q 'versionName "0.4.0"' app/build.gradle
-
-      - name: Snapshot protected playback core
-        run: |
-          {
-            sha256sum app/src/main/java/is/xyz/mpv/MPVLib.kt
-            sha256sum app/src/main/java/is/xyz/mpv/BaseMPVView.kt
-            sha256sum app/src/main/java/is/xyz/mpv/MPVView.kt
-            sha256sum app/src/main/java/is/xyz/mpv/TouchGestures.kt
-            find app/src/main/jni -type f -print0 | sort -z | xargs -0 sha256sum
-            sha256sum buildscripts/scripts/ffmpeg.sh
-            sha256sum buildscripts/scripts/libass.sh
-            sha256sum buildscripts/scripts/libplacebo.sh
-            sha256sum buildscripts/scripts/mpv.sh
-            sha256sum buildscripts/scripts/mpv-android.sh
-          } > /tmp/owl-protected-core.sha256
-          cat /tmp/owl-protected-core.sha256
-
-      - name: Bake tested 0.3.5 navigation UI fix into source
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          p = Path('app/src/main/java/is/xyz/mpv/MPVActivity.kt')
-          text = p.read_text()
-
-          # Make the exact 0.3.5-tested UI change permanent. No decoder/render/subtitle/native code is touched.
-          if 'R.id.cycleSubsBtn, R.id.prevBtn' not in text:
-              pattern = re.compile(
-                  r'\s*val audioButtons = arrayOf\(R\.id\.prevBtn, R\.id\.cycleAudioBtn, R\.id\.playBtn,\s*'
-                  r'R\.id\.cycleSpeedBtn, R\.id\.nextBtn\)\s*'
-                  r'val videoButtons = arrayOf\(R\.id\.cycleAudioBtn, R\.id\.cycleSubsBtn, R\.id\.playBtn,\s*'
-                  r'R\.id\.cycleDecoderBtn, R\.id\.screenModeBtn, R\.id\.cycleSpeedBtn\)'
-              )
-              replacement = '''
-              val audioButtons = arrayOf(R.id.cycleAudioBtn, R.id.prevBtn, R.id.playBtn,
-                  R.id.nextBtn, R.id.cycleSpeedBtn)
-              val videoButtons = arrayOf(R.id.cycleAudioBtn, R.id.cycleSubsBtn, R.id.prevBtn,
-                  R.id.playBtn, R.id.nextBtn, R.id.cycleDecoderBtn,
-                  R.id.screenModeBtn, R.id.cycleSpeedBtn)'''
-              text, count = pattern.subn(replacement, text, count=1)
-              if count != 1:
-                  raise SystemExit(f'button order block matches={count}')
-
-          text = text.replace('        val seekbarGroup = binding.controlsSeekbarGroup\n', '')
-          text = text.replace('            // Move prev/next file from seekbar group to buttons group\n', '')
-          for line in (
-              '            Utils.viewGroupMove(seekbarGroup, R.id.prevBtn, buttonGroup, 0)\n',
-              '            Utils.viewGroupMove(seekbarGroup, R.id.nextBtn, buttonGroup, -1)\n',
-              '            Utils.viewGroupMove(buttonGroup, R.id.prevBtn, seekbarGroup, 0)\n',
-              '            Utils.viewGroupMove(buttonGroup, R.id.nextBtn, seekbarGroup, -1)\n',
-          ):
-              text = text.replace(line, '')
-          text = text.replace('        if (!useAudioUI && plCount == 1) {', '        if (plCount <= 1) {', 1)
-
-          if 'viewGroupMove(seekbarGroup, R.id.prevBtn' in text or 'viewGroupMove(buttonGroup, R.id.prevBtn' in text:
-              raise SystemExit('legacy prev/next reparenting remains')
-          if 'R.id.cycleSubsBtn, R.id.prevBtn' not in text or 'if (plCount <= 1)' not in text:
-              raise SystemExit('stable 0.3.5 navigation state missing')
-          p.write_text(text)
-          PY
-
-      - name: Remove only proven orphan legacy shell files in workspace
-        run: |
-          # Only structural references count. A historical comment in MPVActivity mentions
-          # MainScreenFragment, but the filepath extra it describes is still used by Owl.
-          REFS=$(grep -R -n \
-            --include='*.kt' --include='*.java' --include='*.xml' \
-            -E 'MainScreenFragment\s*\(|MainScreenFragment::|FragmentMainScreenBinding|R\.layout\.fragment_main_screen|@layout/fragment_main_screen' \
-            app/src/main \
-            --exclude='MainScreenFragment.kt' --exclude='fragment_main_screen.xml' || true)
-          if [ -n "$REFS" ]; then
-            echo "$REFS"
-            echo 'Legacy MainScreenFragment still has a structural reference; refusing cleanup.'
-            exit 1
-          fi
-          rm -f app/src/main/java/is/xyz/mpv/MainScreenFragment.kt
-          rm -f app/src/main/res/layout/fragment_main_screen.xml
+          grep -q 'storeFile file(System.getProperty("user.home") + "/.android/debug.keystore")' app/build.gradle
           test ! -e app/src/main/java/is/xyz/mpv/MainScreenFragment.kt
           test ! -e app/src/main/res/layout/fragment_main_screen.xml
-
-      - name: Prove playback core stayed byte-identical
-        run: sha256sum -c /tmp/owl-protected-core.sha256
-
-      - name: Verify Owl 0.4.0 shell and playback-facing features
-        run: |
-          grep -q 'videoAutoRotate' app/src/main/res/layout/activity_apv_settings.xml
-          grep -q 'screenModeBtn' app/src/main/res/layout/player.xml
-          grep -q 'android:id="@+id/prevBtn"' app/src/main/res/layout/player.xml
-          grep -q 'android:id="@+id/nextBtn"' app/src/main/res/layout/player.xml
           grep -q 'R.id.cycleSubsBtn, R.id.prevBtn' app/src/main/java/is/xyz/mpv/MPVActivity.kt
           ! grep -q 'viewGroupMove(seekbarGroup, R.id.prevBtn' app/src/main/java/is/xyz/mpv/MPVActivity.kt
+          ! grep -q 'viewGroupMove(buttonGroup, R.id.prevBtn' app/src/main/java/is/xyz/mpv/MPVActivity.kt
+          grep -q 'if (plCount <= 1)' app/src/main/java/is/xyz/mpv/MPVActivity.kt
           grep -q 'val playlistEntries = displayedVideos.map' app/src/main/java/is/xyz/mpv/FolderActivity.kt
           grep -q 'Utils.makeMemoryPlaylist(playlistEntries)' app/src/main/java/is/xyz/mpv/FolderActivity.kt
-          grep -q 'PAN_SENSITIVITY = 0.45' app/src/main/java/is/xyz/mpv/TouchGestures.kt
-          grep -q 'video-align-x' app/src/main/java/is/xyz/mpv/TouchGestures.kt
+          grep -q 'videoAutoRotate' app/src/main/res/layout/activity_apv_settings.xml
+          grep -q 'screenModeBtn' app/src/main/res/layout/player.xml
           grep -q 'deleteRecursively' app/src/main/java/is/xyz/mpv/OwlFileOperations.kt
-          grep -q '<is.xyz.mpv.MPVView' app/src/main/res/layout/player.xml
 
-      - name: Restore and force stable Owl development signing key
+      - name: Verify protected playback core baseline
+        run: |
+          cat > /tmp/owl-protected-core.sha256 <<'EOF'
+          bcc2e35e50e15597e0106b4851357907328e3bf331b41c1fd58bb75906bfaa97  app/src/main/java/is/xyz/mpv/MPVLib.kt
+          90334a608653afcb780ac967c9905d2aad2c15a537cb429560bd3739e8df1ace  app/src/main/java/is/xyz/mpv/BaseMPVView.kt
+          90aa82b975e261bef4466df634219eb8e19cc65d0417a7803e57db016f0aec97  app/src/main/java/is/xyz/mpv/MPVView.kt
+          edfc186d027b7e0d0661b13a09d7fc7c4811555987329e8b4c4ffcde45947203  app/src/main/java/is/xyz/mpv/TouchGestures.kt
+          6baf03bfa52ee9ed4542a74f7e51a526009565a220cc767bb03533bc2c473c98  app/src/main/jni/Android.mk
+          32f7151a08f806dcf9ef96497ddec824105cd1baa7ef068e9a2899fae8d683de  app/src/main/jni/Application.mk
+          b5903f338635e461978ca36671d015c89b7f0a04465824bbb786e1f7c7e2c6bb  app/src/main/jni/event.cpp
+          906952620c7093a37136e3f3ccb06b9eb7f2e49f435bba76e8da8c038cc521f8  app/src/main/jni/event.h
+          feb2005a32a303d41a2fa4ac551a21ef9f2218d59d6d96fc78dbaecab5a87695  app/src/main/jni/globals.h
+          99dced62480bd0b47d4431bfcb135a0e4346081c9619f771d0f55fe2d5684349  app/src/main/jni/jni_utils.cpp
+          8bb5b9c597ae0e3a0e3480bff12b91c1c32ab6aed1b54e08df8fa027d1944903  app/src/main/jni/jni_utils.h
+          e7822acbca4c320c00a16409deca2ec592ce125d321c3767b12cba8ff5e5f938  app/src/main/jni/log.cpp
+          cc7b805ba9cf45490d9821fa3243422f0077478a604065fae759fc6c38d0e10d  app/src/main/jni/log.h
+          265d72935e35b0cdfc82d7b80768e0d039531a46d2ab2d434f1ca1a189578f03  app/src/main/jni/main.cpp
+          23433a189ac5a03172a22b0d216657b4cd55aa5b2fcfd2ae72d8509ce5f1099e  app/src/main/jni/property.cpp
+          0b0e88150e59d0c65c95a9393e875e15ca7c7f08b473a7909985d9265ded3902  app/src/main/jni/render.cpp
+          c2fa4747b5f6b0dbd46754da8a21e1d816ff1a5952ebd1d5611b88f8bb34064e  app/src/main/jni/thumbnail.cpp
+          3d6693d3ef359437ca54cabaadb973901a95198d4d917a4438d8bf285af3f6fe  buildscripts/scripts/ffmpeg.sh
+          030fa9e5893ae3cea8d3dbb1ac35846a26047b4552363c1a8252c259722e6b74  buildscripts/scripts/libass.sh
+          7cd7f3a6c9f7da6176be5bfc0c6d3c0be39ea5582919f3b6dd2ddb82a6342953  buildscripts/scripts/libplacebo.sh
+          043338c15fbbd79e505a7f96c3436fc6ba16f81e4cbd41351742e2d65f632853  buildscripts/scripts/mpv.sh
+          33fd2e40e11c45dc3ebd92f6b1bca51aba79339e31abdfc4545cab280fd5e95c  buildscripts/scripts/mpv-android.sh
+          EOF
+          sha256sum -c /tmp/owl-protected-core.sha256
+
+      - name: Restore stable Owl development signing key
         run: |
           mkdir -p "$HOME/.android"
           base64 -d .github/owl-signing/debug-keystore.b64 > "$HOME/.android/debug.keystore"
           echo '27809b3ba39dc05131743472fc76a69b1ced9c36b97dd658eabecdbdb4df6bf7  '$HOME'/.android/debug.keystore' | sha256sum -c -
           keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
           chmod 600 "$HOME/.android/debug.keystore"
-
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path('app/build.gradle')
-          text = p.read_text()
-          marker = 'android {\n'
-          signing = '''android {
-              signingConfigs {
-                  getByName("debug") {
-                      storeFile file(System.getProperty("user.home") + "/.android/debug.keystore")
-                      storePassword "android"
-                      keyAlias "androiddebugkey"
-                      keyPassword "android"
-                  }
-              }
-          '''
-          if marker not in text:
-              raise SystemExit('android block not found')
-          text = text.replace(marker, signing, 1)
-          p.write_text(text)
-          PY
 
       - name: Restore verified Owl PNG and create standard mipmaps
         run: |
@@ -176,15 +95,27 @@ jobs:
           from pathlib import Path
           from PIL import Image
           import hashlib
+
           source = Path('/tmp/owl_launcher_icon.png')
           raw = source.read_bytes()
           digest = hashlib.sha256(raw).hexdigest()
           expected = '9f8ad69dffea19a55f0270971220c20b332970728a40edcc7cbc3ec0c15c9bd6'
           assert digest == expected, (digest, expected)
+
           with Image.open(source) as im:
-              im.load(); assert im.format == 'PNG'; assert im.size == (192, 192)
+              im.load()
+              assert im.format == 'PNG'
+              assert im.size == (192, 192)
               master = im.convert('RGBA')
-          for folder, size in {'mipmap-mdpi':48,'mipmap-hdpi':72,'mipmap-xhdpi':96,'mipmap-xxhdpi':144,'mipmap-xxxhdpi':192}.items():
+
+          sizes = {
+              'mipmap-mdpi': 48,
+              'mipmap-hdpi': 72,
+              'mipmap-xhdpi': 96,
+              'mipmap-xxhdpi': 144,
+              'mipmap-xxxhdpi': 192,
+          }
+          for folder, size in sizes.items():
               out = Path('app/src/main/res') / folder / 'owl_launcher_icon.png'
               out.parent.mkdir(parents=True, exist_ok=True)
               master.resize((size, size), Image.Resampling.LANCZOS).save(out, 'PNG', optimize=True)
@@ -215,24 +146,17 @@ jobs:
           grep -q "application-label:'Owl'" /tmp/owl-badging.txt
           grep -q "launchable-activity: name='is.xyz.mpv.MainActivity'" /tmp/owl-badging.txt
           grep -Eq "application-icon-[0-9]+:'res/mipmap-[^']*/owl_launcher_icon\.png'" /tmp/owl-badging.txt
-          keytool -exportcert -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey -file /tmp/owl-cert.der
+
+          keytool -exportcert \
+            -keystore "$HOME/.android/debug.keystore" \
+            -storepass android \
+            -alias androiddebugkey \
+            -file /tmp/owl-cert.der
           EXPECTED_CERT=$(sha256sum /tmp/owl-cert.der | awk '{print $1}')
           "$APKSIGNER" verify --print-certs "$APK" | tee /tmp/owl-signing.txt
           ACTUAL_CERT=$(awk '/certificate SHA-256 digest:/ {print $NF; exit}' /tmp/owl-signing.txt | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')
           test -n "$ACTUAL_CERT"
           test "$ACTUAL_CERT" = "$EXPECTED_CERT"
-
-      - name: Persist only the proven safe source cleanup
-        run: |
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add app/src/main/java/is/xyz/mpv/MPVActivity.kt
-          git add -u app/src/main/java/is/xyz/mpv/MainScreenFragment.kt app/src/main/res/layout/fragment_main_screen.xml
-          if ! git diff --cached --quiet; then
-            git commit -m 'Bake stable Owl shell cleanup into source'
-            git push origin HEAD:main
-          fi
-          echo "CLEANUP_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Prepare Owl arm64 APK
         run: |
@@ -250,7 +174,6 @@ jobs:
           retention-days: 30
 
       - name: Publish GitHub Release
-        continue-on-error: true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -259,6 +182,6 @@ jobs:
           gh release create v0.4.0 \
             Owl-0.4.0-arm64.apk \
             Owl-0.4.0-arm64.sha256 \
-            --target "$CLEANUP_SHA" \
+            --target "$GITHUB_SHA" \
             --title "Owl 0.4.0" \
-            --notes "Safe shell cleanup. Playback core, JNI, FFmpeg, libass, libplacebo, mpv rendering, HW decoding, subtitles and scaling code are byte-identical to the previous stable build. Removes only proven orphan legacy main-screen code and bakes the already-tested 0.3.5 Previous/Next UI fix into source so it no longer depends on a build-time workaround. Stable Owl signature retained."
+            --notes "Clean Owl shell build. Playback core, JNI, FFmpeg, libass, libplacebo, mpv rendering, HW decoding, subtitles and scaling remain protected against accidental changes. Obsolete patch/import/icon-recovery workflows and the unused legacy mpv home screen were removed. The stable Previous/Next UI fix and Owl signing configuration are now part of the source instead of build-time patches."
