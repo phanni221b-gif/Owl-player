@@ -35,20 +35,69 @@ jobs:
           sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip gperf nasm
           sudo pip3 install meson pillow --break-system-packages
 
-      - name: Set Owl 0.3.4 version
+      - name: Set Owl 0.3.5 version
         run: |
-          sed -i 's/versionCode 55/versionCode 59/' app/build.gradle
-          sed -i 's/versionName "0.3.0"/versionName "0.3.4"/' app/build.gradle
-          grep -q 'versionCode 59' app/build.gradle
-          grep -q 'versionName "0.3.4"' app/build.gradle
+          sed -i 's/versionCode 55/versionCode 60/' app/build.gradle
+          sed -i 's/versionName "0.3.0"/versionName "0.3.5"/' app/build.gradle
+          grep -q 'versionCode 60' app/build.gradle
+          grep -q 'versionName "0.3.5"' app/build.gradle
 
-      - name: Verify Owl 0.3.4 feature sources
+      - name: Patch stable Previous Next control logic
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('app/src/main/java/is/xyz/mpv/MPVActivity.kt')
+          text = p.read_text()
+
+          old_buttons = '''        val audioButtons = arrayOf(R.id.prevBtn, R.id.cycleAudioBtn, R.id.playBtn,
+                  R.id.cycleSpeedBtn, R.id.nextBtn)
+          val videoButtons = arrayOf(R.id.cycleAudioBtn, R.id.cycleSubsBtn, R.id.playBtn,
+                  R.id.cycleDecoderBtn, R.id.screenModeBtn, R.id.cycleSpeedBtn)
+          '''
+          new_buttons = '''        val audioButtons = arrayOf(R.id.cycleAudioBtn, R.id.prevBtn, R.id.playBtn,
+                  R.id.nextBtn, R.id.cycleSpeedBtn)
+          val videoButtons = arrayOf(R.id.cycleAudioBtn, R.id.cycleSubsBtn, R.id.prevBtn,
+                  R.id.playBtn, R.id.nextBtn, R.id.cycleDecoderBtn,
+                  R.id.screenModeBtn, R.id.cycleSpeedBtn)
+          '''
+          if old_buttons not in text:
+              raise SystemExit('button order block not found')
+          text = text.replace(old_buttons, new_buttons, 1)
+
+          removals = [
+              '        val seekbarGroup = binding.controlsSeekbarGroup\n',
+              '            // Move prev/next file from seekbar group to buttons group\n',
+              '            Utils.viewGroupMove(seekbarGroup, R.id.prevBtn, buttonGroup, 0)\n',
+              '            Utils.viewGroupMove(seekbarGroup, R.id.nextBtn, buttonGroup, -1)\n',
+              '            Utils.viewGroupMove(buttonGroup, R.id.prevBtn, seekbarGroup, 0)\n',
+              '            Utils.viewGroupMove(buttonGroup, R.id.nextBtn, seekbarGroup, -1)\n',
+          ]
+          for old in removals:
+              if old not in text:
+                  raise SystemExit(f'expected legacy control line missing: {old!r}')
+              text = text.replace(old, '', 1)
+
+          old_count = '        if (!useAudioUI && plCount == 1) {'
+          if old_count not in text:
+              raise SystemExit('playlist visibility condition not found')
+          text = text.replace(old_count, '        if (plCount <= 1) {', 1)
+
+          p.write_text(text)
+          PY
+
+      - name: Verify Owl 0.3.5 feature sources
         run: |
           grep -q 'videoAutoRotate' app/src/main/res/layout/activity_apv_settings.xml
           grep -q 'screenModeBtn' app/src/main/res/layout/player.xml
-          grep -q 'controls_button_row' app/src/main/res/layout/player.xml
           grep -q 'android:id="@+id/prevBtn"' app/src/main/res/layout/player.xml
           grep -q 'android:id="@+id/nextBtn"' app/src/main/res/layout/player.xml
+          grep -q 'android:id="@+id/playBtn"' app/src/main/res/layout/player.xml
+          grep -q 'val videoButtons = arrayOf(R.id.cycleAudioBtn, R.id.cycleSubsBtn, R.id.prevBtn' app/src/main/java/is/xyz/mpv/MPVActivity.kt
+          ! grep -q 'viewGroupMove(seekbarGroup, R.id.prevBtn' app/src/main/java/is/xyz/mpv/MPVActivity.kt
+          ! grep -q 'viewGroupMove(buttonGroup, R.id.prevBtn' app/src/main/java/is/xyz/mpv/MPVActivity.kt
+          grep -q 'if (plCount <= 1)' app/src/main/java/is/xyz/mpv/MPVActivity.kt
+          grep -q 'val playlistEntries = displayedVideos.map' app/src/main/java/is/xyz/mpv/FolderActivity.kt
+          grep -q 'Utils.makeMemoryPlaylist(playlistEntries)' app/src/main/java/is/xyz/mpv/FolderActivity.kt
           grep -q 'PAN_SENSITIVITY = 0.45' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'PAN_JITTER_DEADZONE_FRACTION' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'PAN_SMOOTHING_KEEP' app/src/main/java/is/xyz/mpv/TouchGestures.kt
@@ -57,16 +106,8 @@ jobs:
           grep -q 'video-align-y' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'android:id="@+id/mainSelectionBar"' app/src/main/res/layout/activity_main.xml
           grep -q 'android:id="@+id/videoSelectionBar"' app/src/main/res/layout/activity_folder.xml
-          grep -q 'fun selectAllVisible()' app/src/main/java/is/xyz/mpv/FolderAdapter.kt
-          grep -q 'fun selectAll()' app/src/main/java/is/xyz/mpv/VideoAdapter.kt
           grep -q 'confirmDeleteSelectedFolders' app/src/main/java/is/xyz/mpv/MainActivity.kt
           grep -q 'confirmDeleteSelectedVideos' app/src/main/java/is/xyz/mpv/FolderActivity.kt
-          grep -q '휴지통으로 이동하지 않고 완전히 삭제합니다' app/src/main/java/is/xyz/mpv/MainActivity.kt
-          grep -q '휴지통으로 이동하지 않고 완전히 삭제합니다' app/src/main/java/is/xyz/mpv/FolderActivity.kt
-          grep -q 'fun deleteFolders' app/src/main/java/is/xyz/mpv/OwlFileOperations.kt
-          grep -q 'fun deleteVideos' app/src/main/java/is/xyz/mpv/OwlFileOperations.kt
-          grep -q 'fun moveFolders' app/src/main/java/is/xyz/mpv/OwlFileOperations.kt
-          grep -q 'fun moveVideos' app/src/main/java/is/xyz/mpv/OwlFileOperations.kt
           grep -q 'deleteRecursively' app/src/main/java/is/xyz/mpv/OwlFileOperations.kt
 
       - name: Restore and force stable Owl development signing key
@@ -203,16 +244,16 @@ jobs:
 
       - name: Prepare Owl arm64 APK
         run: |
-          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.3.4-arm64.apk
-          sha256sum Owl-0.3.4-arm64.apk > Owl-0.3.4-arm64.sha256
+          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.3.5-arm64.apk
+          sha256sum Owl-0.3.5-arm64.apk > Owl-0.3.5-arm64.sha256
 
-      - name: Preserve Owl 0.3.4 APK artifact
+      - name: Preserve Owl 0.3.5 APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Owl-0.3.4-arm64
+          name: Owl-0.3.5-arm64
           path: |
-            Owl-0.3.4-arm64.apk
-            Owl-0.3.4-arm64.sha256
+            Owl-0.3.5-arm64.apk
+            Owl-0.3.5-arm64.sha256
           if-no-files-found: error
           retention-days: 30
 
@@ -221,11 +262,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v0.3.4 --yes 2>/dev/null || true
-          git push origin :refs/tags/v0.3.4 2>/dev/null || true
-          gh release create v0.3.4 \
-            Owl-0.3.4-arm64.apk \
-            Owl-0.3.4-arm64.sha256 \
+          gh release delete v0.3.5 --yes 2>/dev/null || true
+          git push origin :refs/tags/v0.3.5 2>/dev/null || true
+          gh release create v0.3.5 \
+            Owl-0.3.5-arm64.apk \
+            Owl-0.3.5-arm64.sha256 \
             --target "$GITHUB_SHA" \
-            --title "Owl 0.3.4" \
-            --notes "MX-style file management and gesture refinement. Long-press a folder or video to enter multi-select mode; the top bar switches to Select All, Move and Delete. Delete asks for confirmation and permanently removes files/folders instead of sending them to Trash. Move supports cross-storage copy-then-delete fallback with collision-safe naming. Also keeps stabilized 45% two-finger pan sensitivity, jitter filtering, bounded video-align movement, 8x pinch zoom, and Previous/Next at the far edges of the lower control row. Stable Owl signature retained."
+            --title "Owl 0.3.5" \
+            --notes "Fixes the crash when switching to Previous/Next video by removing legacy control reparenting that still expected those buttons inside the seek bar. Previous/Play/Next now stay together in the lower icon row with equal spacing instead of being pinned to the far edges. The playback playlist remains a fixed snapshot of the exact folder sort order visible when playback starts; Owl does not rescan or reorder files live during playback. Keeps permanent multi-select delete/move, bounded stabilized two-finger pan, 8x pinch zoom, HW+ -> HW -> SW Auto decoding, stable signing, subtitles, upscaling and foldable resizing."
