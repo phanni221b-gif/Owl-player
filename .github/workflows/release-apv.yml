@@ -14,7 +14,6 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-
       - uses: actions/setup-java@v6
         with:
           java-version: '17'
@@ -33,7 +32,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip gperf nasm
-          sudo pip3 install meson --break-system-packages
+          sudo pip3 install meson pillow --break-system-packages
+
+      - name: Verify source icon
+        run: |
+          python3 -c "from PIL import Image; im=Image.open('app/src/main/res/drawable-nodpi/owl_launcher_source.png'); im.load(); assert im.format == 'PNG' and im.width >= 400 and im.height >= 400; print(im.size, im.mode)"
+          test ! -e app/src/main/res/mipmap-xxxhdpi/owl_launcher_art.webp
+          test ! -e app/src/main/res/mipmap-xxxhdpi/owl_launcher_icon.webp
+          test ! -e app/src/main/res/mipmap-anydpi-v26/owl_launcher_foreground.xml
 
       - name: Download or build native dependencies
         run: |
@@ -46,31 +52,30 @@ jobs:
       - name: Build Owl APKs
         run: DONT_BUILD_RELEASE=1 buildscripts/include/ci.sh build
 
-      - name: Verify merged manifest uses Owl icon
+      - name: Verify final APK icon
         run: |
-          MERGED="app/build/intermediates/merged_manifests/allstorageDebug/processAllstorageDebugManifest/AndroidManifest.xml"
-          if [ ! -f "$MERGED" ]; then
-            MERGED=$(find app/build/intermediates -path '*allstorageDebug*' -name AndroidManifest.xml | head -1)
-          fi
-          test -n "$MERGED"
-          grep -q 'mipmap/owl_launcher_icon' "$MERGED"
-          ! grep -q 'mipmap/mpv_launcher_icon' "$MERGED"
-          echo "Verified merged manifest: $MERGED"
+          APK=app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk
+          AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt | sort -V | tail -1)
+          "$AAPT" dump badging "$APK" > /tmp/owl-badging.txt
+          grep -q "application-label:'Owl'" /tmp/owl-badging.txt
+          grep -q 'application-icon-.*owl_launcher_icon' /tmp/owl-badging.txt
+          grep -q "launchable-activity: name='is.xyz.mpv.MainActivity'.*owl_launcher_icon" /tmp/owl-badging.txt
+          if unzip -Z1 "$APK" | grep -qE 'owl_launcher_(art|icon)\.webp$'; then exit 1; fi
+          ICON_PATH=$(unzip -Z1 "$APK" | grep 'owl_launcher_source.png$' | head -1)
+          test -n "$ICON_PATH"
+          unzip -p "$APK" "$ICON_PATH" > /tmp/owl_launcher_source.png
+          python3 -c "from PIL import Image; im=Image.open('/tmp/owl_launcher_source.png'); im.load(); assert im.format == 'PNG' and im.width >= 400 and im.height >= 400; print(im.size, im.mode)"
+          grep -E 'application-icon|launchable-activity' /tmp/owl-badging.txt | head -20
 
       - name: Prepare Owl arm64 APK
         run: |
-          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.2.3-arm64.apk
-          sha256sum Owl-0.2.3-arm64.apk > Owl-0.2.3-arm64.sha256
+          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.2.4-arm64.apk
+          sha256sum Owl-0.2.4-arm64.apk > Owl-0.2.4-arm64.sha256
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v0.2.3 --yes 2>/dev/null || true
-          git push origin :refs/tags/v0.2.3 2>/dev/null || true
-          gh release create v0.2.3 \
-            Owl-0.2.3-arm64.apk \
-            Owl-0.2.3-arm64.sha256 \
-            --target "$GITHUB_SHA" \
-            --title "Owl 0.2.3" \
-            --notes "Hardwires the intended glossy orange Owl launcher artwork in the base application and launcher activity manifests, instead of relying on the old mpv launcher icon path. The build also verifies the final merged manifest contains only the Owl launcher icon reference. Keeps the status-bar/inset fix and existing playback, upscaling and subtitle features."
+          gh release delete v0.2.4 --yes 2>/dev/null || true
+          git push origin :refs/tags/v0.2.4 2>/dev/null || true
+          gh release create v0.2.4 Owl-0.2.4-arm64.apk Owl-0.2.4-arm64.sha256 --target "$GITHUB_SHA" --title "Owl 0.2.4" --notes "Replaces the corrupt Owl WebP launcher bitmap with a valid PNG, removes the indirect foreground chain, and validates the icon extracted from the finished APK before publishing."
