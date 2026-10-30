@@ -90,16 +90,6 @@
                 android:orientation="horizontal"
                 android:weightSum="100">
 
-                <ImageButton
-                    android:id="@+id/prevBtn"
-                    style="?buttonBarButtonStyle"
-                    android:layout_width="44dp"
-                    android:layout_height="44dp"
-                    android:background="?attr/selectableItemBackgroundBorderless"
-                    android:contentDescription="이전 영상"
-                    app:srcCompat="@drawable/ic_skip_previous_black_24dp"
-                    app:tint="@android:color/white" />
-
                 <TextView
                     android:id="@+id/playbackPositionTxt"
                     android:layout_width="wrap_content"
@@ -134,100 +124,120 @@
                     android:textColor="@android:color/white"
                     android:textSize="12sp"
                     tools:text="13:37" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/controls_button_row"
+                android:layout_width="match_parent"
+                android:layout_height="64dp"
+                android:layoutDirection="ltr"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageButton
+                    android:id="@+id/prevBtn"
+                    style="?buttonBarButtonStyle"
+                    android:layout_width="48dp"
+                    android:layout_height="52dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="이전 영상"
+                    app:srcCompat="@drawable/ic_skip_previous_black_24dp"
+                    app:tint="@android:color/white" />
+
+                <HorizontalScrollView
+                    android:layout_width="0dp"
+                    android:layout_height="64dp"
+                    android:layout_weight="1"
+                    android:fillViewport="true"
+                    android:scrollbars="none">
+
+                    <LinearLayout
+                        android:id="@+id/controls_button_group"
+                        android:layout_width="wrap_content"
+                        android:layout_height="64dp"
+                        android:layoutDirection="ltr"
+                        android:gravity="center"
+                        android:orientation="horizontal"
+                        android:paddingStart="2dp"
+                        android:paddingEnd="2dp">
+
+                        <ImageButton
+                            android:id="@+id/cycleAudioBtn"
+                            style="?buttonBarButtonStyle"
+                            android:layout_width="48dp"
+                            android:layout_height="52dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="오디오 트랙"
+                            app:srcCompat="@drawable/ic_audiotrack_black_24dp"
+                            app:tint="@android:color/white" />
+
+                        <ImageButton
+                            android:id="@+id/cycleSubsBtn"
+                            style="?buttonBarButtonStyle"
+                            android:layout_width="48dp"
+                            android:layout_height="52dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="자막"
+                            app:srcCompat="@drawable/ic_subtitles_black_24dp"
+                            app:tint="@android:color/white" />
+
+                        <ImageButton
+                            android:id="@+id/playBtn"
+                            style="?buttonBarButtonStyle"
+                            android:layout_width="60dp"
+                            android:layout_height="60dp"
+                            android:layout_marginStart="4dp"
+                            android:layout_marginEnd="4dp"
+                            android:background="?attr/selectableItemBackgroundBorderless"
+                            android:contentDescription="재생/일시정지"
+                            app:tint="@color/owl_orange"
+                            tools:src="@drawable/ic_play_arrow_black_24dp" />
+
+                        <Button
+                            android:id="@+id/cycleDecoderBtn"
+                            style="?buttonBarButtonStyle"
+                            android:layout_width="52dp"
+                            android:layout_height="48dp"
+                            android:minWidth="0dp"
+                            android:padding="0dp"
+                            android:textColor="@android:color/white"
+                            android:textSize="11sp"
+                            tools:text="HW+" />
+
+                        <is.xyz.mpv.ScreenModeButton
+                            android:id="@+id/screenModeBtn"
+                            style="?buttonBarButtonStyle"
+                            android:layout_width="60dp"
+                            android:layout_height="48dp"
+                            android:minWidth="0dp"
+                            android:padding="0dp"
+                            android:text="맞춤"
+                            android:textColor="@color/owl_orange"
+                            android:textSize="11sp" />
+
+                        <Button
+                            android:id="@+id/cycleSpeedBtn"
+                            style="?buttonBarButtonStyle"
+                            android:layout_width="58dp"
+                            android:layout_height="48dp"
+                            android:minWidth="0dp"
+                            android:padding="0dp"
+                            android:textColor="@android:color/white"
+                            android:textSize="11sp"
+                            tools:text="1.00x" />
+                    </LinearLayout>
+                </HorizontalScrollView>
 
                 <ImageButton
                     android:id="@+id/nextBtn"
                     style="?buttonBarButtonStyle"
-                    android:layout_width="44dp"
-                    android:layout_height="44dp"
+                    android:layout_width="48dp"
+                    android:layout_height="52dp"
                     android:background="?attr/selectableItemBackgroundBorderless"
                     android:contentDescription="다음 영상"
                     app:srcCompat="@drawable/ic_skip_next_black_24dp"
                     app:tint="@android:color/white" />
             </LinearLayout>
-
-            <HorizontalScrollView
-                android:layout_width="match_parent"
-                android:layout_height="64dp"
-                android:fillViewport="true"
-                android:scrollbars="none">
-
-                <LinearLayout
-                    android:id="@+id/controls_button_group"
-                    android:layout_width="wrap_content"
-                    android:layout_height="64dp"
-                    android:layoutDirection="ltr"
-                    android:gravity="center"
-                    android:orientation="horizontal"
-                    android:paddingStart="4dp"
-                    android:paddingEnd="4dp">
-
-                    <ImageButton
-                        android:id="@+id/cycleAudioBtn"
-                        style="?buttonBarButtonStyle"
-                        android:layout_width="48dp"
-                        android:layout_height="52dp"
-                        android:background="?attr/selectableItemBackgroundBorderless"
-                        android:contentDescription="오디오 트랙"
-                        app:srcCompat="@drawable/ic_audiotrack_black_24dp"
-                        app:tint="@android:color/white" />
-
-                    <ImageButton
-                        android:id="@+id/cycleSubsBtn"
-                        style="?buttonBarButtonStyle"
-                        android:layout_width="48dp"
-                        android:layout_height="52dp"
-                        android:background="?attr/selectableItemBackgroundBorderless"
-                        android:contentDescription="자막"
-                        app:srcCompat="@drawable/ic_subtitles_black_24dp"
-                        app:tint="@android:color/white" />
-
-                    <ImageButton
-                        android:id="@+id/playBtn"
-                        style="?buttonBarButtonStyle"
-                        android:layout_width="60dp"
-                        android:layout_height="60dp"
-                        android:layout_marginStart="4dp"
-                        android:layout_marginEnd="4dp"
-                        android:background="?attr/selectableItemBackgroundBorderless"
-                        android:contentDescription="재생/일시정지"
-                        app:tint="@color/owl_orange"
-                        tools:src="@drawable/ic_play_arrow_black_24dp" />
-
-                    <Button
-                        android:id="@+id/cycleDecoderBtn"
-                        style="?buttonBarButtonStyle"
-                        android:layout_width="52dp"
-                        android:layout_height="48dp"
-                        android:minWidth="0dp"
-                        android:padding="0dp"
-                        android:textColor="@android:color/white"
-                        android:textSize="11sp"
-                        tools:text="HW+" />
-
-                    <is.xyz.mpv.ScreenModeButton
-                        android:id="@+id/screenModeBtn"
-                        style="?buttonBarButtonStyle"
-                        android:layout_width="60dp"
-                        android:layout_height="48dp"
-                        android:minWidth="0dp"
-                        android:padding="0dp"
-                        android:text="맞춤"
-                        android:textColor="@color/owl_orange"
-                        android:textSize="11sp" />
-
-                    <Button
-                        android:id="@+id/cycleSpeedBtn"
-                        style="?buttonBarButtonStyle"
-                        android:layout_width="58dp"
-                        android:layout_height="48dp"
-                        android:minWidth="0dp"
-                        android:padding="0dp"
-                        android:textColor="@android:color/white"
-                        android:textSize="11sp"
-                        tools:text="1.00x" />
-                </LinearLayout>
-            </HorizontalScrollView>
         </LinearLayout>
 
         <TextView
