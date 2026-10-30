@@ -127,18 +127,18 @@ jobs:
 
       - name: Prepare Owl arm64 APK
         run: |
-          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.2.4-arm64.apk
-          sha256sum Owl-0.2.4-arm64.apk > Owl-0.2.4-arm64.sha256
+          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.3.0-arm64.apk
+          sha256sum Owl-0.3.0-arm64.apk > Owl-0.3.0-arm64.sha256
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v0.2.4 --yes 2>/dev/null || true
-          git push origin :refs/tags/v0.2.4 2>/dev/null || true
-          gh release create v0.2.4 \
-            Owl-0.2.4-arm64.apk \
-            Owl-0.2.4-arm64.sha256 \
+          gh release delete v0.3.0 --yes 2>/dev/null || true
+          git push origin :refs/tags/v0.3.0 2>/dev/null || true
+          gh release create v0.3.0 \
+            Owl-0.3.0-arm64.apk \
+            Owl-0.3.0-arm64.sha256 \
             --target "$GITHUB_SHA" \
-            --title "Owl 0.2.4" \
-            --notes "Launcher icon simplified to standard PNG mipmaps generated from one verified 192px Owl PNG source. Adaptive/WebP icon overrides are removed. The release is published only after source SHA-256, PNG decoding, APK icon decoding and AAPT launcher mapping all pass."
+            --title "Owl 0.3.0" \
+            --notes "MX-style usability update: Hermès-inspired orange theme, responsive Fold layout, folder and video sorting, lazy thumbnails, video metadata, automatic resume progress, MX-style gestures, simplified player controls, and existing mpv subtitle/hardware decode/upscaling support preserved."
