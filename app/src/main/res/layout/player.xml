@@ -1,16 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <RelativeLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
     xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
-    xmlns:app="http://schemas.android.com/apk/res-auto">
+    android:background="#000000">
 
     <is.xyz.mpv.MPVView
         android:id="@+id/player"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
-    <!-- so that insets can be applied as margins -->
     <RelativeLayout
         android:id="@+id/outside"
         android:layout_width="match_parent"
@@ -23,29 +23,37 @@
             android:layout_height="wrap_content"
             android:layout_alignParentBottom="true"
             android:layout_centerHorizontal="true"
-            android:layout_marginLeft="24dp"
-            android:layout_marginTop="60dp"
-            android:layout_marginRight="24dp"
-            android:layout_marginBottom="60dp"
-            android:background="#bf000000"
-            android:orientation="vertical">
+            android:layout_marginStart="12dp"
+            android:layout_marginEnd="12dp"
+            android:layout_marginBottom="18dp"
+            android:background="#9A000000"
+            android:orientation="vertical"
+            android:paddingStart="10dp"
+            android:paddingTop="8dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="8dp">
 
             <LinearLayout
                 android:id="@+id/controls_title_group"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:layout_height="wrap_content"
                 android:orientation="vertical"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="2dp"
                 android:visibility="gone"
                 tools:visibility="visible">
 
-                <!-- These two are only used for audio -->
                 <TextView
                     android:id="@+id/titleTextView"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:gravity="center"
-                    android:textColor="@color/tint_normal"
-                    android:textSize="24sp"
+                    android:ellipsize="end"
+                    android:gravity="start"
+                    android:maxLines="1"
+                    android:textColor="@android:color/white"
+                    android:textSize="18sp"
+                    android:textStyle="bold"
                     android:visibility="gone"
                     tools:text="Song Title" />
 
@@ -53,51 +61,55 @@
                     android:id="@+id/minorTitleTextView"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
-                    android:gravity="center"
-                    android:textColor="@color/tint_normal"
-                    android:textSize="14sp"
+                    android:ellipsize="end"
+                    android:gravity="start"
+                    android:maxLines="1"
+                    android:textColor="#BFFFFFFF"
+                    android:textSize="13sp"
                     android:visibility="gone"
                     tools:text="Artist / Album" />
 
-                <!-- This one for video title display -->
                 <TextView
                     android:id="@+id/fullTitleTextView"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
                     android:ellipsize="middle"
-                    android:gravity="center"
+                    android:gravity="start"
                     android:singleLine="true"
-                    android:textColor="@color/tint_normal"
-                    android:textSize="16sp"
+                    android:textColor="@android:color/white"
+                    android:textSize="15sp"
                     tools:text="Video Title" />
-
             </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/controls_seekbar_group"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:layout_height="48dp"
                 android:layoutDirection="ltr"
+                android:gravity="center_vertical"
                 android:orientation="horizontal"
                 android:weightSum="100">
 
                 <ImageButton
                     android:id="@+id/prevBtn"
                     style="?buttonBarButtonStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:minWidth="48dp"
-                    android:minHeight="48dp"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="이전 영상"
                     app:srcCompat="@drawable/ic_skip_previous_black_24dp"
-                    app:tint="@color/tint_normal" />
+                    app:tint="@android:color/white" />
 
                 <TextView
                     android:id="@+id/playbackPositionTxt"
                     android:layout_width="wrap_content"
                     android:layout_height="match_parent"
                     android:gravity="center"
-                    android:padding="8dp"
+                    android:minWidth="48dp"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
                     android:textColor="@android:color/white"
+                    android:textSize="12sp"
                     tools:text="00:00" />
 
                 <SeekBar
@@ -107,33 +119,37 @@
                     android:layout_gravity="center_vertical"
                     android:layout_weight="100"
                     android:minHeight="24dp"
-                    android:progressBackgroundTint="@color/tint_seekbar_bg" />
+                    android:progressBackgroundTint="#6DFFFFFF"
+                    android:progressTint="@color/owl_orange"
+                    android:thumbTint="@color/owl_orange" />
 
                 <TextView
                     android:id="@+id/playbackDurationTxt"
                     android:layout_width="wrap_content"
                     android:layout_height="match_parent"
                     android:gravity="center"
-                    android:padding="8dp"
+                    android:minWidth="48dp"
+                    android:paddingStart="4dp"
+                    android:paddingEnd="4dp"
                     android:textColor="@android:color/white"
+                    android:textSize="12sp"
                     tools:text="13:37" />
 
                 <ImageButton
                     android:id="@+id/nextBtn"
                     style="?buttonBarButtonStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:minWidth="48dp"
-                    android:minHeight="48dp"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="다음 영상"
                     app:srcCompat="@drawable/ic_skip_next_black_24dp"
-                    app:tint="@color/tint_normal" />
-
+                    app:tint="@android:color/white" />
             </LinearLayout>
 
             <LinearLayout
                 android:id="@+id/controls_button_group"
                 android:layout_width="match_parent"
-                android:layout_height="match_parent"
+                android:layout_height="64dp"
                 android:layoutDirection="ltr"
                 android:gravity="center"
                 android:orientation="horizontal">
@@ -141,44 +157,56 @@
                 <ImageButton
                     android:id="@+id/cycleAudioBtn"
                     style="?buttonBarButtonStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="오디오 트랙"
                     app:srcCompat="@drawable/ic_audiotrack_black_24dp"
-                    app:tint="@color/tint_normal" />
+                    app:tint="@android:color/white" />
 
                 <ImageButton
                     android:id="@+id/cycleSubsBtn"
                     style="?buttonBarButtonStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    android:layout_width="52dp"
+                    android:layout_height="52dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="자막"
                     app:srcCompat="@drawable/ic_subtitles_black_24dp"
-                    app:tint="@color/tint_normal" />
+                    app:tint="@android:color/white" />
 
                 <ImageButton
                     android:id="@+id/playBtn"
                     style="?buttonBarButtonStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
-                    android:textColor="@android:color/white"
-                    app:tint="@color/tint_normal"
+                    android:layout_width="64dp"
+                    android:layout_height="64dp"
+                    android:layout_marginStart="8dp"
+                    android:layout_marginEnd="8dp"
+                    android:background="?attr/selectableItemBackgroundBorderless"
+                    android:contentDescription="재생/일시정지"
+                    app:tint="@color/owl_orange"
                     tools:src="@drawable/ic_play_arrow_black_24dp" />
 
                 <Button
                     android:id="@+id/cycleDecoderBtn"
                     style="?buttonBarButtonStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    android:layout_width="56dp"
+                    android:layout_height="48dp"
+                    android:minWidth="0dp"
+                    android:padding="0dp"
                     android:textColor="@android:color/white"
+                    android:textSize="12sp"
                     tools:text="HW+" />
 
                 <Button
                     android:id="@+id/cycleSpeedBtn"
                     style="?buttonBarButtonStyle"
-                    android:layout_width="wrap_content"
-                    android:layout_height="wrap_content"
+                    android:layout_width="62dp"
+                    android:layout_height="48dp"
+                    android:minWidth="0dp"
+                    android:padding="0dp"
                     android:textColor="@android:color/white"
-                    tools:text="1.00X" />
-
+                    android:textSize="12sp"
+                    tools:text="1.00x" />
             </LinearLayout>
         </LinearLayout>
 
@@ -189,6 +217,7 @@
             android:layout_alignParentStart="true"
             android:layout_alignParentTop="true"
             android:layout_marginStart="16dp"
+            android:layout_marginTop="12dp"
             android:shadowColor="#000000"
             android:shadowDx="1"
             android:shadowDy="1"
@@ -206,13 +235,14 @@
             android:shadowColor="#000000"
             android:shadowDx="0"
             android:shadowDy="0"
-            android:shadowRadius="4"
+            android:shadowRadius="5"
             android:textAlignment="center"
             android:textColor="#ffffff"
-            android:textSize="36sp"
+            android:textSize="28sp"
             android:textStyle="bold"
             android:visibility="gone"
-            tools:text="[gesture]" />
+            tools:text="+00:10"
+            tools:visibility="visible" />
 
         <LinearLayout
             android:id="@+id/top_controls"
@@ -221,59 +251,59 @@
             android:layout_height="wrap_content"
             android:layout_alignParentTop="true"
             android:layout_alignParentEnd="true"
-            android:alpha="0.5"
-            android:background="#bf000000"
-            android:orientation="horizontal">
+            android:layout_marginTop="10dp"
+            android:layout_marginEnd="10dp"
+            android:alpha="0.92"
+            android:background="#75000000"
+            android:orientation="horizontal"
+            android:padding="2dp">
 
             <ImageButton
                 android:id="@+id/topLockBtn"
                 style="?buttonBarButtonStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minWidth="40dp"
-                android:minHeight="40dp"
-                android:padding="4dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="잠금"
+                android:padding="8dp"
                 app:srcCompat="@drawable/ic_lock_24dp"
-                app:tint="@color/tint_normal" />
+                app:tint="@android:color/white" />
 
             <ImageButton
                 android:id="@+id/topPiPBtn"
                 style="?buttonBarButtonStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minWidth="40dp"
-                android:minHeight="40dp"
-                android:padding="4dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="PIP"
+                android:padding="8dp"
                 app:srcCompat="@drawable/ic_picture_in_picture_24dp"
-                app:tint="@color/tint_normal" />
+                app:tint="@android:color/white" />
 
             <ImageButton
                 android:id="@+id/topMenuBtn"
                 style="?buttonBarButtonStyle"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:minWidth="40dp"
-                android:minHeight="40dp"
-                android:padding="4dp"
+                android:layout_width="44dp"
+                android:layout_height="44dp"
+                android:background="?attr/selectableItemBackgroundBorderless"
+                android:contentDescription="재생 메뉴"
+                android:padding="8dp"
                 app:srcCompat="@drawable/ic_settings_black_24dp"
-                app:tint="@color/tint_normal" />
-
+                app:tint="@android:color/white" />
         </LinearLayout>
 
-        <!-- mismatching width/height so that the button appears exactly square?! -->
         <ImageButton
             android:id="@+id/unlockBtn"
-            android:layout_width="48dp"
+            android:layout_width="52dp"
             android:layout_height="52dp"
             android:layout_alignParentTop="true"
             android:layout_alignParentEnd="true"
-            android:layout_marginStart="24dp"
-            android:layout_marginTop="24dp"
-            android:layout_marginEnd="24dp"
-            android:layout_marginBottom="24dp"
+            android:layout_marginTop="14dp"
+            android:layout_marginEnd="14dp"
+            android:background="#75000000"
+            android:contentDescription="잠금 해제"
             android:visibility="gone"
-            app:srcCompat="@drawable/ic_lock_open_24dp" />
-
+            app:srcCompat="@drawable/ic_lock_open_24dp"
+            app:tint="@android:color/white" />
     </RelativeLayout>
-
 </RelativeLayout>
