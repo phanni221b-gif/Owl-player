@@ -1,5 +1,5 @@
 name: Release Owl
-# chunk source attached to main
+# Base64 icon chunks verified on main
 
 on:
   push:
