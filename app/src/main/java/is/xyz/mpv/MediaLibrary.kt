@@ -13,14 +13,20 @@ data class MediaVideo(
     val uri: String,
     val durationMs: Long,
     val width: Int,
-    val height: Int
+    val height: Int,
+    val sizeBytes: Long = 0L,
+    val modifiedSeconds: Long = 0L
 )
 
 data class MediaFolder(
     val key: String,
     val name: String,
-    val videos: MutableList<MediaVideo> = mutableListOf()
-)
+    val videos: MutableList<MediaVideo> = mutableListOf(),
+    val storageLabel: String = ""
+) {
+    val newestModifiedSeconds: Long
+        get() = videos.maxOfOrNull { it.modifiedSeconds } ?: 0L
+}
 
 object MediaLibrary {
     @Volatile
@@ -55,8 +61,16 @@ object MediaLibrary {
                 MediaStore.Video.Media.RELATIVE_PATH,
                 MediaStore.Video.Media.DURATION,
                 MediaStore.Video.Media.WIDTH,
-                MediaStore.Video.Media.HEIGHT
+                MediaStore.Video.Media.HEIGHT,
+                MediaStore.Video.Media.SIZE,
+                MediaStore.Video.Media.DATE_MODIFIED
             )
+
+            val storageLabel = when {
+                Build.VERSION.SDK_INT < Build.VERSION_CODES.Q -> "저장소"
+                volume == MediaStore.VOLUME_EXTERNAL_PRIMARY -> "내부 저장소"
+                else -> "외장 저장소"
+            }
 
             try {
                 resolver.query(collection, projection, null, null, null)?.use { cursor ->
@@ -67,6 +81,8 @@ object MediaLibrary {
                     val durationCol = cursor.getColumnIndex(MediaStore.Video.Media.DURATION)
                     val widthCol = cursor.getColumnIndex(MediaStore.Video.Media.WIDTH)
                     val heightCol = cursor.getColumnIndex(MediaStore.Video.Media.HEIGHT)
+                    val sizeCol = cursor.getColumnIndex(MediaStore.Video.Media.SIZE)
+                    val modifiedCol = cursor.getColumnIndex(MediaStore.Video.Media.DATE_MODIFIED)
 
                     while (cursor.moveToNext()) {
                         val id = if (idCol >= 0) cursor.getLong(idCol) else continue
@@ -85,14 +101,18 @@ object MediaLibrary {
                             ?: relative?.trim('/')?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
                             ?: "Videos"
 
-                        val folder = grouped.getOrPut(key) { MediaFolder(key, folderName) }
+                        val folder = grouped.getOrPut(key) {
+                            MediaFolder(key = key, name = folderName, storageLabel = storageLabel)
+                        }
                         folder.videos += MediaVideo(
                             title = title,
                             path = path,
                             uri = ContentUris.withAppendedId(collection, id).toString(),
                             durationMs = if (durationCol >= 0) cursor.getLong(durationCol) else 0L,
                             width = if (widthCol >= 0) cursor.getInt(widthCol) else 0,
-                            height = if (heightCol >= 0) cursor.getInt(heightCol) else 0
+                            height = if (heightCol >= 0) cursor.getInt(heightCol) else 0,
+                            sizeBytes = if (sizeCol >= 0) cursor.getLong(sizeCol) else 0L,
+                            modifiedSeconds = if (modifiedCol >= 0) cursor.getLong(modifiedCol) else 0L
                         )
                     }
                 }
