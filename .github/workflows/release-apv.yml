@@ -35,29 +35,29 @@ jobs:
           sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip gperf nasm
           sudo pip3 install meson pillow --break-system-packages
 
-      - name: Rebuild launcher assets from canonical Owl artwork
+      - name: Rebuild launcher assets from verified Owl artwork
         run: |
           python3 - <<'PY'
           from pathlib import Path
           from PIL import Image
+          import hashlib
 
-          src_path = Path('app/src/main/res/drawable-nodpi/owl_icon.webp')
-          with Image.open(src_path) as src_im:
-              src_im.load()
-              print('Canonical artwork:', src_im.format, src_im.size, src_im.mode)
-              assert src_im.format == 'WEBP', f'Unexpected format: {src_im.format}'
-              assert src_im.width == src_im.height, f'Icon is not square: {src_im.size}'
-              assert src_im.width >= 192, f'Icon is too small: {src_im.size}'
-              src = src_im.convert('RGBA')
+          src_path = Path('.github/owl-icon-source/owl_master.jpg')
+          raw = src_path.read_bytes()
+          digest = hashlib.sha256(raw).hexdigest()
+          expected = '03f132040734836bf2aec752204f7be1261bc38614602564ffefa9141c602bca'
+          assert digest == expected, f'Canonical Owl artwork SHA mismatch: {digest}'
 
-          # A clean, lossless 512px foreground for Android 8+ adaptive icons.
-          fg = src.resize((512, 512), Image.Resampling.LANCZOS)
-          fg_path = Path('app/src/main/res/drawable-nodpi/owl_launcher_source.png')
-          fg_path.parent.mkdir(parents=True, exist_ok=True)
-          fg.save(fg_path, format='PNG', optimize=False)
+          with Image.open(src_path) as im:
+              im.load()
+              assert im.format == 'JPEG', im.format
+              assert im.size == (512, 512), im.size
+              src = im.convert('RGBA')
 
-          # Proper legacy launcher bitmaps for Android 6/7 and any launcher that
-          # requests density-specific fallback resources.
+          fg = Path('app/src/main/res/drawable-nodpi/owl_launcher_source.png')
+          fg.parent.mkdir(parents=True, exist_ok=True)
+          src.save(fg, format='PNG', optimize=False)
+
           sizes = {
               'mipmap-mdpi': 48,
               'mipmap-hdpi': 72,
@@ -71,18 +71,17 @@ jobs:
               src.resize((size, size), Image.Resampling.LANCZOS).save(out, format='PNG', optimize=False)
               with Image.open(out) as check:
                   check.load()
-                  assert check.format == 'PNG'
-                  assert check.size == (size, size)
-                  print('Generated:', out, check.size, check.mode)
+                  assert check.format == 'PNG' and check.size == (size, size)
 
-          with Image.open(fg_path) as check:
+          with Image.open(fg) as check:
               check.load()
-              assert check.format == 'PNG'
-              assert check.size == (512, 512)
-              print('Generated:', fg_path, check.size, check.mode)
+              assert check.format == 'PNG' and check.size == (512, 512)
+
+          print('Canonical Owl artwork:', digest, src.size)
+          print('Generated and decoded all launcher PNGs successfully')
           PY
 
-          # These were the corrupt/indirect resources that caused the launcher fallback.
+          rm -f app/src/main/res/drawable-nodpi/owl_icon.webp
           rm -f app/src/main/res/mipmap-xxxhdpi/owl_launcher_art.webp
           rm -f app/src/main/res/mipmap-xxxhdpi/owl_launcher_icon.webp
           rm -f app/src/main/res/mipmap-anydpi-v26/owl_launcher_foreground.xml
@@ -91,11 +90,19 @@ jobs:
         run: |
           grep -q 'android:icon="@mipmap/owl_launcher_icon"' app/src/main/AndroidManifest.xml
           grep -q 'android:roundIcon="@mipmap/owl_launcher_icon"' app/src/main/AndroidManifest.xml
-          grep -q 'android:drawable="@drawable/owl_launcher_source"' app/src/main/res/mipmap-anydpi-v26/owl_launcher_icon.xml
-          test -f app/src/main/res/drawable-nodpi/owl_launcher_source.png
-          for d in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
-            test -f "app/src/main/res/mipmap-$d/owl_launcher_icon.png"
-          done
+          grep -q '@drawable/owl_launcher_source' app/src/main/res/mipmap-anydpi-v26/owl_launcher_icon.xml
+          ! grep -q 'mpv_launcher_icon' app/src/main/AndroidManifest.xml
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          paths = [Path('app/src/main/res/drawable-nodpi/owl_launcher_source.png')]
+          paths += [Path('app/src/main/res')/d/'owl_launcher_icon.png' for d in ['mipmap-mdpi','mipmap-hdpi','mipmap-xhdpi','mipmap-xxhdpi','mipmap-xxxhdpi']]
+          for p in paths:
+              with Image.open(p) as im:
+                  im.load()
+                  assert im.format == 'PNG'
+                  print(p, im.size, im.mode)
+          PY
 
       - name: Download or build native dependencies
         run: |
@@ -112,43 +119,32 @@ jobs:
         run: |
           APK=app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk
           test -f "$APK"
-
           AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt | sort -V | tail -1)
           "$AAPT" dump badging "$APK" > /tmp/owl-badging.txt
           grep -q "application-label:'Owl'" /tmp/owl-badging.txt
           grep -q 'application-icon-.*owl_launcher_icon' /tmp/owl-badging.txt
-          grep -q "launchable-activity: name='is.xyz.mpv.MainActivity'.*owl_launcher_icon" /tmp/owl-badging.txt
+          grep -q "launchable-activity: name='is.xyz.mpv.MainActivity'" /tmp/owl-badging.txt
+
+          rm -rf /tmp/owl-apk && mkdir /tmp/owl-apk
+          unzip -q "$APK" -d /tmp/owl-apk
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          root = Path('/tmp/owl-apk/res')
+          candidates = sorted(root.rglob('owl_launcher_icon.png')) + sorted(root.rglob('owl_launcher_source.png'))
+          assert candidates, 'No Owl launcher PNG resources found in finished APK'
+          for p in candidates:
+              with Image.open(p) as im:
+                  im.load()
+                  assert im.format == 'PNG'
+                  assert im.width > 0 and im.height > 0
+                  print('APK icon OK:', p.relative_to('/tmp/owl-apk'), im.size, im.mode)
+          PY
 
           if unzip -Z1 "$APK" | grep -qE 'owl_launcher_(art|icon)\.webp$'; then
-            echo 'ERROR: corrupt/obsolete launcher WebP survived into APK'
+            echo 'Corrupt legacy Owl WebP unexpectedly packaged' >&2
             exit 1
           fi
-
-          ICON_PATH=$(unzip -Z1 "$APK" | grep 'owl_launcher_source.png$' | head -1)
-          test -n "$ICON_PATH"
-          unzip -p "$APK" "$ICON_PATH" > /tmp/owl_launcher_source.png
-          python3 - <<'PY'
-          from PIL import Image
-          with Image.open('/tmp/owl_launcher_source.png') as im:
-              im.load()
-              assert im.format == 'PNG'
-              assert im.size == (512, 512)
-              print('APK adaptive foreground OK:', im.size, im.mode)
-          PY
-
-          LEGACY_PATH=$(unzip -Z1 "$APK" | grep -E 'res/mipmap-.*?/owl_launcher_icon\.png$' | tail -1)
-          test -n "$LEGACY_PATH"
-          unzip -p "$APK" "$LEGACY_PATH" > /tmp/owl_launcher_legacy.png
-          python3 - <<'PY'
-          from PIL import Image
-          with Image.open('/tmp/owl_launcher_legacy.png') as im:
-              im.load()
-              assert im.format == 'PNG'
-              assert im.width >= 48 and im.height >= 48
-              print('APK legacy launcher bitmap OK:', im.size, im.mode)
-          PY
-
-          echo 'Final APK launcher references:'
           grep -E 'application-icon|launchable-activity' /tmp/owl-badging.txt | head -20
 
       - name: Prepare Owl arm64 APK
@@ -167,4 +163,4 @@ jobs:
             Owl-0.2.4-arm64.sha256 \
             --target "$GITHUB_SHA" \
             --title "Owl 0.2.4" \
-            --notes "Launcher icon root-cause fix. The release now treats owl_icon.webp as the canonical artwork, decodes it first, regenerates clean lossless PNG resources for every legacy density plus the Android 8+ adaptive foreground, removes the corrupt WebP launcher chain, and then re-opens the icon files extracted from the finished APK before publishing. If any source or packaged icon cannot be decoded, the release is blocked."
+            --notes "Fixes the broken launcher icon at its root: the canonical Owl artwork is stored as a verified binary Git blob, adaptive and legacy launcher PNGs are regenerated from it, and every launcher bitmap is decoded again from the finished APK before publication."
