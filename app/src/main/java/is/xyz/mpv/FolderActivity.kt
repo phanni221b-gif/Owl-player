@@ -12,6 +12,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import java.io.File
 import java.util.Locale
 import kotlin.concurrent.thread
@@ -19,6 +20,7 @@ import kotlin.concurrent.thread
 class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     private lateinit var recycler: RecyclerView
     private lateinit var emptyText: TextView
+    private lateinit var swipeRefresh: SwipeRefreshLayout
     private val adapter = VideoAdapter(::playVideo, ::onVideoSelectionChanged)
     private lateinit var folderKey: String
     private var currentVideos: List<MediaVideo> = emptyList()
@@ -83,8 +85,10 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
 
         recycler = findViewById(R.id.videoRecycler)
         emptyText = findViewById(R.id.videoEmptyText)
+        swipeRefresh = findViewById(R.id.folderSwipeRefresh)
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = adapter
+        swipeRefresh.setOnRefreshListener { rescanFolder(showLoadingText = false) }
 
         onBackPressedDispatcher.addCallback(this) {
             if (adapter.isSelectionMode()) adapter.clearSelection() else finish()
@@ -97,6 +101,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
         findViewById<View>(R.id.folderToolbar).visibility = if (count == 0) View.VISIBLE else View.GONE
         findViewById<View>(R.id.videoSelectionBar).visibility = if (count == 0) View.GONE else View.VISIBLE
         findViewById<TextView>(R.id.videoSelectionCount).text = "${count}개 선택"
+        if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = count == 0
     }
 
     private fun showFolder() {
@@ -112,7 +117,11 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
         rescanFolder()
     }
 
-    private fun rescanFolder() {
+    private fun rescanFolder(showLoadingText: Boolean = true) {
+        if (showLoadingText) {
+            emptyText.visibility = View.VISIBLE
+            emptyText.text = "영상을 불러오는 중…"
+        }
         thread(name = "OwlFolderScan") {
             val folder = MediaLibrary.scan(this).firstOrNull { it.key == folderKey }
             runOnUiThread {
@@ -120,6 +129,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
                 applySort()
                 emptyText.visibility = if (currentVideos.isEmpty()) View.VISIBLE else View.GONE
                 if (currentVideos.isEmpty()) emptyText.text = "영상이 없습니다."
+                swipeRefresh.isRefreshing = false
             }
         }
     }
