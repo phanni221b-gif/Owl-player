@@ -2,9 +2,13 @@ package `is`.xyz.mpv
 
 import android.content.ContentUris
 import android.content.Context
+import android.net.Uri
 import android.os.Build
+import android.os.Environment
+import android.os.storage.StorageManager
 import android.provider.MediaStore
 import java.io.File
+import java.util.ArrayDeque
 import java.util.Locale
 
 data class MediaVideo(
@@ -123,11 +127,137 @@ object MediaLibrary {
             }
         }
 
+        // MediaStore on some Samsung/USB combinations can lag behind or omit removable media
+        // completely. The all-storage build already asks for MANAGE_EXTERNAL_STORAGE, so use that
+        // permission to supplement MediaStore with a direct read-only discovery pass over
+        // non-primary mounted volumes. Playback still uses the normal mpv path handling.
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
+            BuildConfig.FLAVOR == "allstorage" &&
+            Environment.isExternalStorageManager()
+        ) {
+            addDirectExternalVolumes(context, grouped)
+        }
+
         val result = grouped.values
             .onEach { it.videos.sortBy { video -> video.title.lowercase(Locale.getDefault()) } }
             .sortedBy { it.name.lowercase(Locale.getDefault()) }
 
         cache = result
         return result
+    }
+
+    private fun addDirectExternalVolumes(
+        context: Context,
+        grouped: LinkedHashMap<String, MediaFolder>
+    ) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
+
+        val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as? StorageManager ?: return
+        val knownPaths = grouped.values
+            .asSequence()
+            .flatMap { it.videos.asSequence() }
+            .mapNotNull { it.path?.takeIf(String::isNotBlank) }
+            .map { File(it).absolutePath }
+            .toMutableSet()
+
+        storageManager.storageVolumes
+            .asSequence()
+            .filter { !it.isPrimary }
+            .forEach { volume ->
+                val root = try {
+                    volume.directory
+                } catch (_: Throwable) {
+                    null
+                } ?: return@forEach
+
+                if (!root.exists() || !root.canRead()) return@forEach
+
+                val label = try {
+                    volume.getDescription(context).takeIf { it.isNotBlank() }
+                } catch (_: Throwable) {
+                    null
+                } ?: "외장 저장소"
+
+                scanDirectRoot(root, label, knownPaths, grouped)
+            }
+    }
+
+    private fun scanDirectRoot(
+        root: File,
+        storageLabel: String,
+        knownPaths: MutableSet<String>,
+        grouped: LinkedHashMap<String, MediaFolder>
+    ) {
+        val pending = ArrayDeque<File>()
+        val visited = hashSetOf<String>()
+        pending.add(root)
+
+        while (pending.isNotEmpty()) {
+            val directory = pending.removeLast()
+            val canonical = try {
+                directory.canonicalPath
+            } catch (_: Throwable) {
+                directory.absolutePath
+            }
+            if (!visited.add(canonical)) continue
+
+            val children = try {
+                directory.listFiles()
+            } catch (_: Throwable) {
+                null
+            } ?: continue
+
+            for (child in children) {
+                if (child.isDirectory) {
+                    if (shouldSkipDirectDirectory(root, child)) continue
+                    pending.add(child)
+                    continue
+                }
+
+                if (!child.isFile) continue
+                val extension = child.extension.lowercase(Locale.ROOT)
+                if (extension !in videoExtensions) continue
+
+                val absolutePath = child.absolutePath
+                if (!knownPaths.add(absolutePath)) continue
+
+                val parent = child.parentFile ?: root
+                val key = parent.absolutePath
+                val folderName = if (parent.absolutePath == root.absolutePath) {
+                    storageLabel
+                } else {
+                    parent.name.takeIf { it.isNotBlank() } ?: storageLabel
+                }
+                val folder = grouped.getOrPut(key) {
+                    MediaFolder(
+                        key = key,
+                        name = folderName,
+                        storageLabel = storageLabel
+                    )
+                }
+                folder.videos += MediaVideo(
+                    title = child.name,
+                    path = absolutePath,
+                    uri = Uri.fromFile(child).toString(),
+                    durationMs = 0L,
+                    width = 0,
+                    height = 0,
+                    sizeBytes = try { child.length() } catch (_: Throwable) { 0L },
+                    modifiedSeconds = try { child.lastModified() / 1000L } catch (_: Throwable) { 0L }
+                )
+            }
+        }
+    }
+
+    private fun shouldSkipDirectDirectory(root: File, directory: File): Boolean {
+        val relative = try {
+            directory.relativeTo(root).invariantSeparatorsPath
+        } catch (_: Throwable) {
+            return false
+        }
+        return relative.equals("Android/data", ignoreCase = true) ||
+            relative.startsWith("Android/data/", ignoreCase = true) ||
+            relative.equals("Android/obb", ignoreCase = true) ||
+            relative.startsWith("Android/obb/", ignoreCase = true)
     }
 }
