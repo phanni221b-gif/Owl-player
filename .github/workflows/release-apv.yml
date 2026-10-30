@@ -1,15 +1,12 @@
 name: Release Owl
-
-# Binary-source icon validation enabled.
+# trigger after binary source attach
 on:
   push:
     paths:
       - '.github/workflows/release-apv.yml'
   workflow_dispatch:
-
 permissions:
   contents: write
-
 jobs:
   build-release:
     runs-on: ubuntu-24.04
@@ -37,17 +34,16 @@ jobs:
           from pathlib import Path
           from PIL import Image
           import hashlib
-          src_path=Path('.github/owl-icon-source/owl_master.jpg')
-          raw=src_path.read_bytes(); digest=hashlib.sha256(raw).hexdigest()
-          assert digest=='03f132040734836bf2aec752204f7be1261bc38614602564ffefa9141c602bca', digest
-          with Image.open(src_path) as im:
+          p=Path('.github/owl-icon-source/owl_master.jpg'); raw=p.read_bytes(); h=hashlib.sha256(raw).hexdigest()
+          assert h=='03f132040734836bf2aec752204f7be1261bc38614602564ffefa9141c602bca', h
+          with Image.open(p) as im:
               im.load(); assert im.format=='JPEG' and im.size==(512,512); src=im.convert('RGBA')
           fg=Path('app/src/main/res/drawable-nodpi/owl_launcher_source.png'); fg.parent.mkdir(parents=True,exist_ok=True); src.save(fg,'PNG')
           for folder,size in {'mipmap-mdpi':48,'mipmap-hdpi':72,'mipmap-xhdpi':96,'mipmap-xxhdpi':144,'mipmap-xxxhdpi':192}.items():
               out=Path('app/src/main/res')/folder/'owl_launcher_icon.png'; out.parent.mkdir(parents=True,exist_ok=True); src.resize((size,size),Image.Resampling.LANCZOS).save(out,'PNG')
               with Image.open(out) as c: c.load(); assert c.format=='PNG' and c.size==(size,size)
           with Image.open(fg) as c: c.load(); assert c.format=='PNG' and c.size==(512,512)
-          print('Canonical Owl artwork OK',digest)
+          print('Canonical Owl artwork OK',h)
           PY
           rm -f app/src/main/res/drawable-nodpi/owl_icon.webp app/src/main/res/mipmap-xxxhdpi/owl_launcher_art.webp app/src/main/res/mipmap-xxxhdpi/owl_launcher_icon.webp app/src/main/res/mipmap-anydpi-v26/owl_launcher_foreground.xml
       - name: Verify launcher resource graph before build
@@ -77,9 +73,9 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           from PIL import Image
-          candidates=sorted(Path('/tmp/owl-apk/res').rglob('owl_launcher_icon.png'))+sorted(Path('/tmp/owl-apk/res').rglob('owl_launcher_source.png'))
-          assert candidates
-          for p in candidates:
+          c=sorted(Path('/tmp/owl-apk/res').rglob('owl_launcher_icon.png'))+sorted(Path('/tmp/owl-apk/res').rglob('owl_launcher_source.png'))
+          assert c
+          for p in c:
               with Image.open(p) as im: im.load(); assert im.format=='PNG'; print('APK icon OK',p,im.size)
           PY
           if unzip -Z1 "$APK" | grep -qE 'owl_launcher_(art|icon)\.webp$'; then exit 1; fi
