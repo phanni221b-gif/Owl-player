@@ -46,41 +46,51 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
+
           p = Path('app/src/main/java/is/xyz/mpv/MPVActivity.kt')
           text = p.read_text()
 
-          old_buttons = '''        val audioButtons = arrayOf(R.id.prevBtn, R.id.cycleAudioBtn, R.id.playBtn,
-                  R.id.cycleSpeedBtn, R.id.nextBtn)
-          val videoButtons = arrayOf(R.id.cycleAudioBtn, R.id.cycleSubsBtn, R.id.playBtn,
-                  R.id.cycleDecoderBtn, R.id.screenModeBtn, R.id.cycleSpeedBtn)
-          '''
-          new_buttons = '''        val audioButtons = arrayOf(R.id.cycleAudioBtn, R.id.prevBtn, R.id.playBtn,
+          pattern = re.compile(
+              r'\s*val audioButtons = arrayOf\(R\.id\.prevBtn, R\.id\.cycleAudioBtn, R\.id\.playBtn,\s*'
+              r'R\.id\.cycleSpeedBtn, R\.id\.nextBtn\)\s*'
+              r'val videoButtons = arrayOf\(R\.id\.cycleAudioBtn, R\.id\.cycleSubsBtn, R\.id\.playBtn,\s*'
+              r'R\.id\.cycleDecoderBtn, R\.id\.screenModeBtn, R\.id\.cycleSpeedBtn\)'
+          )
+          replacement = '''
+              val audioButtons = arrayOf(R.id.cycleAudioBtn, R.id.prevBtn, R.id.playBtn,
                   R.id.nextBtn, R.id.cycleSpeedBtn)
-          val videoButtons = arrayOf(R.id.cycleAudioBtn, R.id.cycleSubsBtn, R.id.prevBtn,
+              val videoButtons = arrayOf(R.id.cycleAudioBtn, R.id.cycleSubsBtn, R.id.prevBtn,
                   R.id.playBtn, R.id.nextBtn, R.id.cycleDecoderBtn,
-                  R.id.screenModeBtn, R.id.cycleSpeedBtn)
-          '''
-          if old_buttons not in text:
-              raise SystemExit('button order block not found')
-          text = text.replace(old_buttons, new_buttons, 1)
+                  R.id.screenModeBtn, R.id.cycleSpeedBtn)'''
+          text, count = pattern.subn(replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(f'button order block matches={count}')
 
-          removals = [
-              '        val seekbarGroup = binding.controlsSeekbarGroup\n',
-              '            // Move prev/next file from seekbar group to buttons group\n',
+          text = text.replace('        val seekbarGroup = binding.controlsSeekbarGroup\n', '')
+          text = text.replace('            // Move prev/next file from seekbar group to buttons group\n', '')
+          for line in (
               '            Utils.viewGroupMove(seekbarGroup, R.id.prevBtn, buttonGroup, 0)\n',
               '            Utils.viewGroupMove(seekbarGroup, R.id.nextBtn, buttonGroup, -1)\n',
               '            Utils.viewGroupMove(buttonGroup, R.id.prevBtn, seekbarGroup, 0)\n',
               '            Utils.viewGroupMove(buttonGroup, R.id.nextBtn, seekbarGroup, -1)\n',
-          ]
-          for old in removals:
-              if old not in text:
-                  raise SystemExit(f'expected legacy control line missing: {old!r}')
-              text = text.replace(old, '', 1)
+          ):
+              text = text.replace(line, '')
 
-          old_count = '        if (!useAudioUI && plCount == 1) {'
-          if old_count not in text:
-              raise SystemExit('playlist visibility condition not found')
-          text = text.replace(old_count, '        if (plCount <= 1) {', 1)
+          text = text.replace(
+              '        if (!useAudioUI && plCount == 1) {',
+              '        if (plCount <= 1) {',
+              1
+          )
+
+          if 'viewGroupMove(seekbarGroup, R.id.prevBtn' in text:
+              raise SystemExit('legacy prev reparent still present')
+          if 'viewGroupMove(buttonGroup, R.id.prevBtn' in text:
+              raise SystemExit('legacy reverse prev reparent still present')
+          if 'R.id.cycleSubsBtn, R.id.prevBtn' not in text:
+              raise SystemExit('new video button order missing')
+          if 'if (plCount <= 1)' not in text:
+              raise SystemExit('playlist visibility guard missing')
 
           p.write_text(text)
           PY
@@ -92,7 +102,7 @@ jobs:
           grep -q 'android:id="@+id/prevBtn"' app/src/main/res/layout/player.xml
           grep -q 'android:id="@+id/nextBtn"' app/src/main/res/layout/player.xml
           grep -q 'android:id="@+id/playBtn"' app/src/main/res/layout/player.xml
-          grep -q 'val videoButtons = arrayOf(R.id.cycleAudioBtn, R.id.cycleSubsBtn, R.id.prevBtn' app/src/main/java/is/xyz/mpv/MPVActivity.kt
+          grep -q 'R.id.cycleSubsBtn, R.id.prevBtn' app/src/main/java/is/xyz/mpv/MPVActivity.kt
           ! grep -q 'viewGroupMove(seekbarGroup, R.id.prevBtn' app/src/main/java/is/xyz/mpv/MPVActivity.kt
           ! grep -q 'viewGroupMove(buttonGroup, R.id.prevBtn' app/src/main/java/is/xyz/mpv/MPVActivity.kt
           grep -q 'if (plCount <= 1)' app/src/main/java/is/xyz/mpv/MPVActivity.kt
