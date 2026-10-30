@@ -35,34 +35,39 @@ jobs:
           sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip gperf nasm
           sudo pip3 install meson pillow --break-system-packages
 
-      - name: Set Owl 0.3.3 version
+      - name: Set Owl 0.3.4 version
         run: |
-          sed -i 's/versionCode 55/versionCode 58/' app/build.gradle
-          sed -i 's/versionName "0.3.0"/versionName "0.3.3"/' app/build.gradle
-          grep -q 'versionCode 58' app/build.gradle
-          grep -q 'versionName "0.3.3"' app/build.gradle
+          sed -i 's/versionCode 55/versionCode 59/' app/build.gradle
+          sed -i 's/versionName "0.3.0"/versionName "0.3.4"/' app/build.gradle
+          grep -q 'versionCode 59' app/build.gradle
+          grep -q 'versionName "0.3.4"' app/build.gradle
 
-      - name: Verify Owl 0.3.3 player feature sources
+      - name: Verify Owl 0.3.4 feature sources
         run: |
           grep -q 'videoAutoRotate' app/src/main/res/layout/activity_apv_settings.xml
           grep -q 'screenModeBtn' app/src/main/res/layout/player.xml
           grep -q 'controls_button_row' app/src/main/res/layout/player.xml
           grep -q 'android:id="@+id/prevBtn"' app/src/main/res/layout/player.xml
           grep -q 'android:id="@+id/nextBtn"' app/src/main/res/layout/player.xml
-          grep -q 'getStringArrayListExtra("owl_playlist_uris")' app/src/main/java/is/xyz/mpv/MPVActivity.kt
-          grep -q 'Utils.makeMemoryPlaylist(paths)' app/src/main/java/is/xyz/mpv/MPVActivity.kt
-          grep -q 'playlist_index' app/src/main/java/is/xyz/mpv/MPVActivity.kt
-          grep -q 'playlist-start' app/src/main/java/is/xyz/mpv/BaseMPVView.kt
-          grep -q 'displayedVideos' app/src/main/java/is/xyz/mpv/FolderActivity.kt
-          grep -q 'EXTRA_OWL_PLAYLIST' app/src/main/java/is/xyz/mpv/FolderActivity.kt
           grep -q 'PAN_SENSITIVITY = 0.45' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'PAN_JITTER_DEADZONE_FRACTION' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'PAN_SMOOTHING_KEEP' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'PINCH_SCALE_DEADZONE' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'video-align-x' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'video-align-y' app/src/main/java/is/xyz/mpv/TouchGestures.kt
-          grep -q 'video-recenter' app/src/main/java/is/xyz/mpv/TouchGestures.kt
-          grep -q 'SCREEN_MODE_FILL' app/src/main/java/is/xyz/mpv/MPVActivity.kt
+          grep -q 'android:id="@+id/mainSelectionBar"' app/src/main/res/layout/activity_main.xml
+          grep -q 'android:id="@+id/videoSelectionBar"' app/src/main/res/layout/activity_folder.xml
+          grep -q 'fun selectAllVisible()' app/src/main/java/is/xyz/mpv/FolderAdapter.kt
+          grep -q 'fun selectAll()' app/src/main/java/is/xyz/mpv/VideoAdapter.kt
+          grep -q 'confirmDeleteSelectedFolders' app/src/main/java/is/xyz/mpv/MainActivity.kt
+          grep -q 'confirmDeleteSelectedVideos' app/src/main/java/is/xyz/mpv/FolderActivity.kt
+          grep -q '휴지통으로 이동하지 않고 완전히 삭제합니다' app/src/main/java/is/xyz/mpv/MainActivity.kt
+          grep -q '휴지통으로 이동하지 않고 완전히 삭제합니다' app/src/main/java/is/xyz/mpv/FolderActivity.kt
+          grep -q 'fun deleteFolders' app/src/main/java/is/xyz/mpv/OwlFileOperations.kt
+          grep -q 'fun deleteVideos' app/src/main/java/is/xyz/mpv/OwlFileOperations.kt
+          grep -q 'fun moveFolders' app/src/main/java/is/xyz/mpv/OwlFileOperations.kt
+          grep -q 'fun moveVideos' app/src/main/java/is/xyz/mpv/OwlFileOperations.kt
+          grep -q 'deleteRecursively' app/src/main/java/is/xyz/mpv/OwlFileOperations.kt
 
       - name: Restore and force stable Owl development signing key
         run: |
@@ -198,16 +203,16 @@ jobs:
 
       - name: Prepare Owl arm64 APK
         run: |
-          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.3.3-arm64.apk
-          sha256sum Owl-0.3.3-arm64.apk > Owl-0.3.3-arm64.sha256
+          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.3.4-arm64.apk
+          sha256sum Owl-0.3.4-arm64.apk > Owl-0.3.4-arm64.sha256
 
-      - name: Preserve Owl 0.3.3 APK artifact
+      - name: Preserve Owl 0.3.4 APK artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Owl-0.3.3-arm64
+          name: Owl-0.3.4-arm64
           path: |
-            Owl-0.3.3-arm64.apk
-            Owl-0.3.3-arm64.sha256
+            Owl-0.3.4-arm64.apk
+            Owl-0.3.4-arm64.sha256
           if-no-files-found: error
           retention-days: 30
 
@@ -216,11 +221,11 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v0.3.3 --yes 2>/dev/null || true
-          git push origin :refs/tags/v0.3.3 2>/dev/null || true
-          gh release create v0.3.3 \
-            Owl-0.3.3-arm64.apk \
-            Owl-0.3.3-arm64.sha256 \
+          gh release delete v0.3.4 --yes 2>/dev/null || true
+          git push origin :refs/tags/v0.3.4 2>/dev/null || true
+          gh release create v0.3.4 \
+            Owl-0.3.4-arm64.apk \
+            Owl-0.3.4-arm64.sha256 \
             --target "$GITHUB_SHA" \
-            --title "Owl 0.3.3" \
-            --notes "Two-finger pan refinement. Lowers pan sensitivity to 45%, adds a small movement deadzone plus low-pass smoothing, suppresses tiny unintended pinch-distance changes during panning, and uses mpv boundary-aware video-align with recentering so an enlarged picture cannot be dragged into empty space. Previous/Next are fixed at the far left/right of the lower control-button row while the seek bar stays clean. Retains sorted playlist navigation, pinch zoom up to 8x, auto-rotation, screen modes, HW+ -> HW -> SW Auto decoding, subtitles, upscaling, stable signing and foldable resizing."
+            --title "Owl 0.3.4" \
+            --notes "MX-style file management and gesture refinement. Long-press a folder or video to enter multi-select mode; the top bar switches to Select All, Move and Delete. Delete asks for confirmation and permanently removes files/folders instead of sending them to Trash. Move supports cross-storage copy-then-delete fallback with collision-safe naming. Also keeps stabilized 45% two-finger pan sensitivity, jitter filtering, bounded video-align movement, 8x pinch zoom, and Previous/Next at the far edges of the lower control row. Stable Owl signature retained."
