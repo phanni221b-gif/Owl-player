@@ -35,7 +35,7 @@ jobs:
           from PIL import Image
           import hashlib
           p=Path('.github/owl-icon-source/owl_master.jpg'); raw=p.read_bytes(); h=hashlib.sha256(raw).hexdigest()
-          assert h=='03f132040734836bf2aec752204f7be1261bc38614602564ffefa9141c602bca', h
+          assert h=='765c65a348898b133d14dde10aa0b8869c677f33cd74d5dffeaaf3969204e24d', h
           with Image.open(p) as im:
               im.load(); assert im.format=='JPEG' and im.size==(512,512); src=im.convert('RGBA')
           fg=Path('app/src/main/res/drawable-nodpi/owl_launcher_source.png'); fg.parent.mkdir(parents=True,exist_ok=True); src.save(fg,'PNG')
