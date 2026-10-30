@@ -55,8 +55,10 @@ jobs:
           grep -q 'playlist-start' app/src/main/java/is/xyz/mpv/BaseMPVView.kt
           grep -q 'displayedVideos' app/src/main/java/is/xyz/mpv/FolderActivity.kt
           grep -q 'EXTRA_OWL_PLAYLIST' app/src/main/java/is/xyz/mpv/FolderActivity.kt
-          grep -q 'PAN_SENSITIVITY = 0.55' app/src/main/java/is/xyz/mpv/TouchGestures.kt
+          grep -q 'PAN_SENSITIVITY = 0.45' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'PAN_JITTER_DEADZONE_FRACTION' app/src/main/java/is/xyz/mpv/TouchGestures.kt
+          grep -q 'PAN_SMOOTHING_KEEP' app/src/main/java/is/xyz/mpv/TouchGestures.kt
+          grep -q 'PINCH_SCALE_DEADZONE' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'video-align-x' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'video-align-y' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'video-recenter' app/src/main/java/is/xyz/mpv/TouchGestures.kt
@@ -210,4 +212,4 @@ jobs:
             Owl-0.3.3-arm64.sha256 \
             --target "$GITHUB_SHA" \
             --title "Owl 0.3.3" \
-            --notes "Two-finger pan refinement. Reduces pan sensitivity to 55%, adds a small accumulated jitter deadzone so fingertip wobble does not shake the picture, and switches bounded movement to mpv video-align with recentering so the enlarged picture cannot drift beyond the video/window boundary. Previous/Next remain fixed at the far left/right of the lower control-button row while the seek bar stays clean. Retains sorted playlist navigation, pinch zoom up to 8x, auto-rotation, screen modes, HW+ -> HW -> SW Auto decoding, subtitles, upscaling, stable signing and foldable resizing."
+            --notes "Two-finger pan refinement. Lowers pan sensitivity to 45%, adds a small movement deadzone plus low-pass smoothing, suppresses tiny unintended pinch-distance changes during panning, and uses mpv boundary-aware video-align with recentering so an enlarged picture cannot be dragged into empty space. Previous/Next are fixed at the far left/right of the lower control-button row while the seek bar stays clean. Retains sorted playlist navigation, pinch zoom up to 8x, auto-rotation, screen modes, HW+ -> HW -> SW Auto decoding, subtitles, upscaling, stable signing and foldable resizing."
