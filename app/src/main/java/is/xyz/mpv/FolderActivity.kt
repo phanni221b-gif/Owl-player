@@ -195,6 +195,9 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     companion object {
         const val EXTRA_FOLDER_KEY = "owl_folder_key"
         const val EXTRA_FOLDER_NAME = "owl_folder_name"
+        // Retained only so the older ACTION_VIEW compatibility branch in MPVActivity compiles.
+        // Owl's folder playback now uses a memory:// M3U playlist instead of this extra.
+        const val EXTRA_OWL_PLAYLIST = "owl_sorted_playlist"
 
         private const val PREFS_UI = "owl_ui"
         private const val KEY_VIDEO_SORT = "video_sort"
