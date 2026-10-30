@@ -57,13 +57,17 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
 
     // Owl two-finger zoom / pan. mpv video-zoom is log2 based:
     // 0 = fitted size, 1 = 2x, 2 = 4x, 3 = 8x.
+    // Panning uses video-align instead of video-pan so mpv itself prevents the
+    // picture from drifting beyond the video/window boundary.
     private var multiTouchActive = false
     private var suppressSingleTouchUntilUp = false
     private var lastPinchDistance = 0f
     private var lastPinchCenter = PointF()
     private var zoomValue = 0.0
-    private var panX = 0.0
-    private var panY = 0.0
+    private var alignX = 0.0
+    private var alignY = 0.0
+    private var panResidualX = 0f
+    private var panResidualY = 0f
 
     private inline fun checkFloat(vararg n: Float): Boolean {
         return !n.any { it.isInfinite() || it.isNaN() }
@@ -90,7 +94,11 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         private const val DEADZONE = 5
         private const val MAX_VIDEO_ZOOM = 3.0 // 8x
         private const val MIN_VIDEO_ZOOM = 0.0 // fitted size
-        private const val PAN_LIMIT = 1.5
+
+        // Lower than 1.0 on purpose: two-finger panning should feel deliberate,
+        // not twitchy. Residual accumulation keeps slow intentional drags working.
+        private const val PAN_SENSITIVITY = 0.55
+        private const val PAN_JITTER_DEADZONE_FRACTION = 0.004f
     }
 
     private fun processTap(p: PointF): Boolean {
@@ -198,6 +206,19 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         )
     }
 
+    private fun resetBoundedPan() {
+        alignX = 0.0
+        alignY = 0.0
+        panResidualX = 0f
+        panResidualY = 0f
+        MPVLib.setPropertyDouble("video-align-x", 0.0)
+        MPVLib.setPropertyDouble("video-align-y", 0.0)
+        // Clear any values left by older Owl builds so the two positioning systems
+        // cannot stack and expose empty space at the edge.
+        MPVLib.setPropertyDouble("video-pan-x", 0.0)
+        MPVLib.setPropertyDouble("video-pan-y", 0.0)
+    }
+
     private fun beginMultiTouch(e: MotionEvent) {
         if (state != State.Up && state != State.Down)
             sendPropertyChange(PropertyChange.Finalize, 0f)
@@ -209,8 +230,13 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         lastPinchCenter = pointerCenter(e)
         zoomValue = (MPVLib.getPropertyDouble("video-zoom") ?: 0.0)
             .coerceIn(MIN_VIDEO_ZOOM, MAX_VIDEO_ZOOM)
-        panX = MPVLib.getPropertyDouble("video-pan-x") ?: 0.0
-        panY = MPVLib.getPropertyDouble("video-pan-y") ?: 0.0
+        alignX = (MPVLib.getPropertyDouble("video-align-x") ?: 0.0).coerceIn(-1.0, 1.0)
+        alignY = (MPVLib.getPropertyDouble("video-align-y") ?: 0.0).coerceIn(-1.0, 1.0)
+        panResidualX = 0f
+        panResidualY = 0f
+        MPVLib.setPropertyBoolean("video-recenter", true)
+        MPVLib.setPropertyDouble("video-pan-x", 0.0)
+        MPVLib.setPropertyDouble("video-pan-y", 0.0)
     }
 
     private fun processMultiTouch(e: MotionEvent): Boolean {
@@ -229,20 +255,34 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         }
 
         if (zoomValue > 0.001) {
-            val dx = if (width > 0f) (center.x - lastPinchCenter.x) / width else 0f
-            val dy = if (height > 0f) (center.y - lastPinchCenter.y) / height else 0f
-            panX = (panX + dx).coerceIn(-PAN_LIMIT, PAN_LIMIT)
-            panY = (panY + dy).coerceIn(-PAN_LIMIT, PAN_LIMIT)
-            MPVLib.setPropertyDouble("video-pan-x", panX)
-            MPVLib.setPropertyDouble("video-pan-y", panY)
+            val rawDx = center.x - lastPinchCenter.x
+            val rawDy = center.y - lastPinchCenter.y
+            panResidualX += rawDx
+            panResidualY += rawDy
+
+            // Small center-point wobble from two fingertips is accumulated but ignored
+            // until it becomes an intentional drag. This removes the visible micro-shake
+            // without making slow pans impossible.
+            val jitterDeadzone = min(width, height) * PAN_JITTER_DEADZONE_FRACTION
+            if (hypot(panResidualX, panResidualY) >= jitterDeadzone) {
+                val dx = if (width > 0f) panResidualX / width else 0f
+                val dy = if (height > 0f) panResidualY / height else 0f
+
+                // video-align is the inverse of direct manipulation: dragging the picture
+                // right/down means showing more of its left/top side.
+                alignX = (alignX - dx * PAN_SENSITIVITY).coerceIn(-1.0, 1.0)
+                alignY = (alignY - dy * PAN_SENSITIVITY).coerceIn(-1.0, 1.0)
+                MPVLib.setPropertyDouble("video-align-x", alignX)
+                MPVLib.setPropertyDouble("video-align-y", alignY)
+
+                panResidualX = 0f
+                panResidualY = 0f
+            }
         } else {
             // Returning to fitted size always recenters the picture.
             zoomValue = 0.0
-            panX = 0.0
-            panY = 0.0
             MPVLib.setPropertyDouble("video-zoom", 0.0)
-            MPVLib.setPropertyDouble("video-pan-x", 0.0)
-            MPVLib.setPropertyDouble("video-pan-y", 0.0)
+            resetBoundedPan()
         }
 
         lastPinchDistance = distance
@@ -285,6 +325,8 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             MotionEvent.ACTION_CANCEL -> {
                 multiTouchActive = false
                 suppressSingleTouchUntilUp = false
+                panResidualX = 0f
+                panResidualY = 0f
                 state = State.Up
                 return true
             }
@@ -292,6 +334,8 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 if (multiTouchActive || suppressSingleTouchUntilUp) {
                     multiTouchActive = false
                     suppressSingleTouchUntilUp = false
+                    panResidualX = 0f
+                    panResidualY = 0f
                     state = State.Up
                     return true
                 }
