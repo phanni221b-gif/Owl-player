@@ -55,10 +55,10 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private var tapGestureCenter : PropertyChange? = null
     private var tapGestureRight : PropertyChange? = null
 
-    // Owl two-finger zoom / pan. mpv video-zoom is log2 based:
+    // Owl two-finger zoom / bounded pan. mpv video-zoom is log2 based:
     // 0 = fitted size, 1 = 2x, 2 = 4x, 3 = 8x.
-    // Panning uses video-align instead of video-pan so mpv itself prevents the
-    // picture from drifting beyond the video/window boundary.
+    // Panning uses video-align instead of unrestricted video-pan so mpv itself keeps
+    // the picture inside the legal video/window boundary.
     private var multiTouchActive = false
     private var suppressSingleTouchUntilUp = false
     private var lastPinchDistance = 0f
@@ -68,6 +68,8 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private var alignY = 0.0
     private var panResidualX = 0f
     private var panResidualY = 0f
+    private var filteredPanX = 0f
+    private var filteredPanY = 0f
 
     private inline fun checkFloat(vararg n: Float): Boolean {
         return !n.any { it.isInfinite() || it.isNaN() }
@@ -95,10 +97,13 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         private const val MAX_VIDEO_ZOOM = 3.0 // 8x
         private const val MIN_VIDEO_ZOOM = 0.0 // fitted size
 
-        // Lower than 1.0 on purpose: two-finger panning should feel deliberate,
-        // not twitchy. Residual accumulation keeps slow intentional drags working.
-        private const val PAN_SENSITIVITY = 0.55
-        private const val PAN_JITTER_DEADZONE_FRACTION = 0.004f
+        // Deliberately calmer than direct finger tracking.
+        private const val PAN_SENSITIVITY = 0.45
+        private const val PAN_JITTER_DEADZONE_FRACTION = 0.0035f
+        private const val PAN_SMOOTHING_KEEP = 0.60f
+
+        // Tiny changes in the distance between two resting fingers should not cause zoom wobble.
+        private const val PINCH_SCALE_DEADZONE = 0.003
     }
 
     private fun processTap(p: PointF): Boolean {
@@ -206,15 +211,21 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         )
     }
 
+    private fun clearPanFilter() {
+        panResidualX = 0f
+        panResidualY = 0f
+        filteredPanX = 0f
+        filteredPanY = 0f
+    }
+
     private fun resetBoundedPan() {
         alignX = 0.0
         alignY = 0.0
-        panResidualX = 0f
-        panResidualY = 0f
+        clearPanFilter()
         MPVLib.setPropertyDouble("video-align-x", 0.0)
         MPVLib.setPropertyDouble("video-align-y", 0.0)
-        // Clear any values left by older Owl builds so the two positioning systems
-        // cannot stack and expose empty space at the edge.
+        // Clear values left by older Owl builds so unrestricted video-pan cannot stack
+        // with boundary-aware alignment and reveal empty space at the edge.
         MPVLib.setPropertyDouble("video-pan-x", 0.0)
         MPVLib.setPropertyDouble("video-pan-y", 0.0)
     }
@@ -232,8 +243,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             .coerceIn(MIN_VIDEO_ZOOM, MAX_VIDEO_ZOOM)
         alignX = (MPVLib.getPropertyDouble("video-align-x") ?: 0.0).coerceIn(-1.0, 1.0)
         alignY = (MPVLib.getPropertyDouble("video-align-y") ?: 0.0).coerceIn(-1.0, 1.0)
-        panResidualX = 0f
-        panResidualY = 0f
+        clearPanFilter()
         MPVLib.setPropertyBoolean("video-recenter", true)
         MPVLib.setPropertyDouble("video-pan-x", 0.0)
         MPVLib.setPropertyDouble("video-pan-y", 0.0)
@@ -245,7 +255,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         val center = pointerCenter(e)
 
         val scaleFactor = (distance / lastPinchDistance).toDouble()
-        if (scaleFactor.isFinite() && scaleFactor > 0.0) {
+        if (scaleFactor.isFinite() && scaleFactor > 0.0 && abs(scaleFactor - 1.0) >= PINCH_SCALE_DEADZONE) {
             val deltaZoom = ln(scaleFactor) / ln(2.0)
             val newZoom = (zoomValue + deltaZoom).coerceIn(MIN_VIDEO_ZOOM, MAX_VIDEO_ZOOM)
             if (abs(newZoom - zoomValue) > 0.0005) {
@@ -260,13 +270,18 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             panResidualX += rawDx
             panResidualY += rawDy
 
-            // Small center-point wobble from two fingertips is accumulated but ignored
-            // until it becomes an intentional drag. This removes the visible micro-shake
-            // without making slow pans impossible.
-            val jitterDeadzone = min(width, height) * PAN_JITTER_DEADZONE_FRACTION
+            // Ignore the center-point wobble made by two resting fingertips until it is
+            // large enough to be intentional. Once accepted, run it through a light
+            // low-pass filter to remove the remaining small frame-to-frame shake.
+            val jitterDeadzone = max(2.5f, min(width, height) * PAN_JITTER_DEADZONE_FRACTION)
             if (hypot(panResidualX, panResidualY) >= jitterDeadzone) {
-                val dx = if (width > 0f) panResidualX / width else 0f
-                val dy = if (height > 0f) panResidualY / height else 0f
+                filteredPanX = filteredPanX * PAN_SMOOTHING_KEEP +
+                    panResidualX * (1f - PAN_SMOOTHING_KEEP)
+                filteredPanY = filteredPanY * PAN_SMOOTHING_KEEP +
+                    panResidualY * (1f - PAN_SMOOTHING_KEEP)
+
+                val dx = if (width > 0f) filteredPanX / width else 0f
+                val dy = if (height > 0f) filteredPanY / height else 0f
 
                 // video-align is the inverse of direct manipulation: dragging the picture
                 // right/down means showing more of its left/top side.
@@ -285,6 +300,8 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             resetBoundedPan()
         }
 
+        // Always use the current finger geometry as the next baseline. That prevents tiny
+        // ignored pinch noise from accumulating into a sudden zoom jump during panning.
         lastPinchDistance = distance
         lastPinchCenter = center
         return true
@@ -325,8 +342,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             MotionEvent.ACTION_CANCEL -> {
                 multiTouchActive = false
                 suppressSingleTouchUntilUp = false
-                panResidualX = 0f
-                panResidualY = 0f
+                clearPanFilter()
                 state = State.Up
                 return true
             }
@@ -334,8 +350,7 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 if (multiTouchActive || suppressSingleTouchUntilUp) {
                     multiTouchActive = false
                     suppressSingleTouchUntilUp = false
-                    panResidualX = 0f
-                    panResidualY = 0f
+                    clearPanFilter()
                     state = State.Up
                     return true
                 }
