@@ -127,10 +127,10 @@ object MediaLibrary {
             }
         }
 
-        // MediaStore on some Samsung/USB combinations can lag behind or omit removable media
-        // completely. The all-storage build already asks for MANAGE_EXTERNAL_STORAGE, so use that
-        // permission to supplement MediaStore with a direct read-only discovery pass over
-        // non-primary mounted volumes. Playback still uses the normal mpv path handling.
+        // MediaStore on some Samsung/USB combinations can omit removable media completely.
+        // In that case, the all-storage build performs one direct read-only discovery pass over
+        // the missing mounted volume. If MediaStore already indexed that volume, do not crawl it
+        // again; this keeps startup fast even with very large SSDs.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             BuildConfig.FLAVOR == "allstorage" &&
             Environment.isExternalStorageManager()
@@ -156,7 +156,7 @@ object MediaLibrary {
         val knownPaths = grouped.values
             .asSequence()
             .flatMap { it.videos.asSequence() }
-            .mapNotNull { it.path?.takeIf(String::isNotBlank) }
+            .mapNotNull { it.path?.takeIf { path -> path.isNotBlank() } }
             .map { File(it).absolutePath }
             .toMutableSet()
 
@@ -171,6 +171,13 @@ object MediaLibrary {
                 } ?: return@forEach
 
                 if (!root.exists() || !root.canRead()) return@forEach
+
+                val rootPath = root.absolutePath.trimEnd(File.separatorChar)
+                val rootPrefix = "$rootPath${File.separator}"
+                val alreadyIndexed = knownPaths.any { path ->
+                    path == rootPath || path.startsWith(rootPrefix)
+                }
+                if (alreadyIndexed) return@forEach
 
                 val label = try {
                     volume.getDescription(context).takeIf { it.isNotBlank() }
