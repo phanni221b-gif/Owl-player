@@ -19,6 +19,8 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        SystemBarInsets.apply(findViewById(R.id.folderRoot))
+
         folderKey = intent.getStringExtra(EXTRA_FOLDER_KEY).orEmpty()
         val folderName = intent.getStringExtra(EXTRA_FOLDER_NAME) ?: "폴더"
 
@@ -42,7 +44,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
 
         emptyText.visibility = View.VISIBLE
         emptyText.text = "영상을 불러오는 중…"
-        thread(name = "ApvFolderScan") {
+        thread(name = "OwlFolderScan") {
             val folder = MediaLibrary.scan(this).firstOrNull { it.key == folderKey }
             runOnUiThread {
                 val videos = folder?.videos ?: emptyList()
@@ -67,7 +69,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     }
 
     companion object {
-        const val EXTRA_FOLDER_KEY = "apv_folder_key"
-        const val EXTRA_FOLDER_NAME = "apv_folder_name"
+        const val EXTRA_FOLDER_KEY = "owl_folder_key"
+        const val EXTRA_FOLDER_NAME = "owl_folder_name"
     }
 }
