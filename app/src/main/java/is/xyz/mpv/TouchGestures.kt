@@ -36,31 +36,34 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     }
 
     private var state = State.Up
-    // relevant movement direction for the current state (0=H, 1=V)
     private var stateDirection = 0
 
-    // timestamp of the last tap (ACTION_UP)
     private var lastTapTime = 0L
-    // when the current gesture began
     private var lastDownTime = 0L
 
-    // where user initially placed their finger (ACTION_DOWN)
     private var initialPos = PointF()
-    // last non-throttled processed position
     private var lastPos = PointF()
 
     private var width = 0f
     private var height = 0f
-    // minimum movement which triggers a Control state
     private var trigger = 0f
 
-    // which property change should be invoked where
     private var gestureHoriz = State.Down
     private var gestureVertLeft = State.Down
     private var gestureVertRight = State.Down
     private var tapGestureLeft : PropertyChange? = null
     private var tapGestureCenter : PropertyChange? = null
     private var tapGestureRight : PropertyChange? = null
+
+    // Owl two-finger zoom / pan. mpv video-zoom is log2 based:
+    // 0 = fitted size, 1 = 2x, 2 = 4x, 3 = 8x.
+    private var multiTouchActive = false
+    private var suppressSingleTouchUntilUp = false
+    private var lastPinchDistance = 0f
+    private var lastPinchCenter = PointF()
+    private var zoomValue = 0.0
+    private var panX = 0.0
+    private var panY = 0.0
 
     private inline fun checkFloat(vararg n: Float): Boolean {
         return !n.any { it.isInfinite() || it.isNaN() }
@@ -79,48 +82,33 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
 
     companion object {
         private const val TAG = "mpv"
-
-        // ratio for trigger, 1/Xth of minimum dimension
-        // for tap gestures this is the distance that must *not* be moved for it to trigger
         private const val TRIGGER_RATE = 30
-
-        // maximum duration between taps (ms) for a double tap to count
         private const val TAP_DURATION = 300L
-
-        // full sweep from left side to right side is 2:30
         private const val CONTROL_SEEK_MAX = 150f
-
-        // same as below, we rescale it inside MPVActivity
         private const val CONTROL_VOLUME_MAX = 1.5f
-
-        // brightness is scaled 0..1; max's not 1f so that user does not have to start from the bottom
-        // if they want to go from none to full brightness
         private const val CONTROL_BRIGHT_MAX = 1.5f
-
-        // do not trigger on X% of screen top/bottom
-        // this is so that user can open android status bar
         private const val DEADZONE = 5
+        private const val MAX_VIDEO_ZOOM = 3.0 // 8x
+        private const val MIN_VIDEO_ZOOM = 0.0 // fitted size
+        private const val PAN_LIMIT = 1.5
     }
 
     private fun processTap(p: PointF): Boolean {
         if (state == State.Up) {
             lastDownTime = SystemClock.uptimeMillis()
-            // 3 is another arbitrary value here that seems good enough
             if (PointF(lastPos.x - p.x, lastPos.y - p.y).length() > trigger * 3)
-                lastTapTime = 0 // last tap was too far away, invalidate
+                lastTapTime = 0
             return true
         }
-        // discard if any movement gesture took place
         if (state != State.Down)
             return false
 
         val now = SystemClock.uptimeMillis()
         if (now - lastDownTime >= TAP_DURATION) {
-            lastTapTime = 0 // finger was held too long, reset
+            lastTapTime = 0
             return false
         }
         if (now - lastTapTime < TAP_DURATION) {
-            // [ Left 28% ] [    Center    ] [ Right 28% ]
             if (p.x <= width * 0.28f)
                 tapGestureLeft?.let { sendPropertyChange(it, -1f); return true }
             else if (p.x >= width * 0.72f)
@@ -135,8 +123,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     }
 
     private fun processMovement(p: PointF): Boolean {
-        // throttle events: only send updates when there's some movement compared to last update
-        // 3 here is arbitrary
         if (PointF(lastPos.x - p.x, lastPos.y - p.y).length() < trigger / 3)
             return false
         lastPos.set(p)
@@ -149,7 +135,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         when (state) {
             State.Up -> {}
             State.Down -> {
-                // we might get into one of Control states if user moves enough
                 if (abs(dx) > trigger) {
                     state = gestureHoriz
                     stateDirection = 0
@@ -157,7 +142,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                     state = if (initialPos.x > width / 2) gestureVertRight else gestureVertLeft
                     stateDirection = 1
                 }
-                // send Init so that it has a chance to cache values before we start modifying them
                 if (state != State.Down)
                     sendPropertyChange(PropertyChange.Init, 0f)
             }
@@ -199,6 +183,73 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         tapGestureRight = map2[get("gesture_tap_right", R.string.pref_gesture_tap_right_default)]
     }
 
+    private fun pointerDistance(e: MotionEvent): Float {
+        if (e.pointerCount < 2) return 0f
+        val dx = e.getX(0) - e.getX(1)
+        val dy = e.getY(0) - e.getY(1)
+        return hypot(dx, dy)
+    }
+
+    private fun pointerCenter(e: MotionEvent): PointF {
+        if (e.pointerCount < 2) return PointF(e.x, e.y)
+        return PointF(
+            (e.getX(0) + e.getX(1)) / 2f,
+            (e.getY(0) + e.getY(1)) / 2f
+        )
+    }
+
+    private fun beginMultiTouch(e: MotionEvent) {
+        if (state != State.Up && state != State.Down)
+            sendPropertyChange(PropertyChange.Finalize, 0f)
+        state = State.Up
+        lastTapTime = 0L
+        multiTouchActive = true
+        suppressSingleTouchUntilUp = true
+        lastPinchDistance = pointerDistance(e).coerceAtLeast(1f)
+        lastPinchCenter = pointerCenter(e)
+        zoomValue = (MPVLib.getPropertyDouble("video-zoom") ?: 0.0)
+            .coerceIn(MIN_VIDEO_ZOOM, MAX_VIDEO_ZOOM)
+        panX = MPVLib.getPropertyDouble("video-pan-x") ?: 0.0
+        panY = MPVLib.getPropertyDouble("video-pan-y") ?: 0.0
+    }
+
+    private fun processMultiTouch(e: MotionEvent): Boolean {
+        if (e.pointerCount < 2) return true
+        val distance = pointerDistance(e).coerceAtLeast(1f)
+        val center = pointerCenter(e)
+
+        val scaleFactor = (distance / lastPinchDistance).toDouble()
+        if (scaleFactor.isFinite() && scaleFactor > 0.0) {
+            val deltaZoom = ln(scaleFactor) / ln(2.0)
+            val newZoom = (zoomValue + deltaZoom).coerceIn(MIN_VIDEO_ZOOM, MAX_VIDEO_ZOOM)
+            if (abs(newZoom - zoomValue) > 0.0005) {
+                zoomValue = newZoom
+                MPVLib.setPropertyDouble("video-zoom", zoomValue)
+            }
+        }
+
+        if (zoomValue > 0.001) {
+            val dx = if (width > 0f) (center.x - lastPinchCenter.x) / width else 0f
+            val dy = if (height > 0f) (center.y - lastPinchCenter.y) / height else 0f
+            panX = (panX + dx).coerceIn(-PAN_LIMIT, PAN_LIMIT)
+            panY = (panY + dy).coerceIn(-PAN_LIMIT, PAN_LIMIT)
+            MPVLib.setPropertyDouble("video-pan-x", panX)
+            MPVLib.setPropertyDouble("video-pan-y", panY)
+        } else {
+            // Returning to fitted size always recenters the picture.
+            zoomValue = 0.0
+            panX = 0.0
+            panY = 0.0
+            MPVLib.setPropertyDouble("video-zoom", 0.0)
+            MPVLib.setPropertyDouble("video-pan-x", 0.0)
+            MPVLib.setPropertyDouble("video-pan-y", 0.0)
+        }
+
+        lastPinchDistance = distance
+        lastPinchCenter = center
+        return true
+    }
+
     fun onTouchEvent(e: MotionEvent): Boolean {
         if (width < 1 || height < 1) {
             Log.w(TAG, "TouchGestures: width or height not set!")
@@ -208,6 +259,45 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             Log.w(TAG, "TouchGestures: ignoring invalid point ${e.x} ${e.y}")
             return false
         }
+
+        // Two fingers are reserved for Owl zoom/pan and never leak into the one-finger
+        // brightness/volume/seek recognizer.
+        when (e.actionMasked) {
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                if (e.pointerCount >= 2) {
+                    beginMultiTouch(e)
+                    return true
+                }
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (multiTouchActive || e.pointerCount >= 2) {
+                    if (!multiTouchActive) beginMultiTouch(e)
+                    return processMultiTouch(e)
+                }
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                if (multiTouchActive) {
+                    if (e.pointerCount <= 2)
+                        multiTouchActive = false
+                    return true
+                }
+            }
+            MotionEvent.ACTION_CANCEL -> {
+                multiTouchActive = false
+                suppressSingleTouchUntilUp = false
+                state = State.Up
+                return true
+            }
+            MotionEvent.ACTION_UP -> {
+                if (multiTouchActive || suppressSingleTouchUntilUp) {
+                    multiTouchActive = false
+                    suppressSingleTouchUntilUp = false
+                    state = State.Up
+                    return true
+                }
+            }
+        }
+
         var gestureHandled = false
         val point = PointF(e.x, e.y)
         when (e.action) {
@@ -218,14 +308,12 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 state = State.Up
             }
             MotionEvent.ACTION_DOWN -> {
-                // deadzone on top/bottom
                 if (e.y < height * DEADZONE / 100 || e.y > height * (100 - DEADZONE) / 100)
                     return false
                 initialPos.set(point)
                 processTap(point)
                 lastPos.set(point)
                 state = State.Down
-                // always return true on ACTION_DOWN to continue receiving events
                 gestureHandled = true
             }
             MotionEvent.ACTION_MOVE -> {
