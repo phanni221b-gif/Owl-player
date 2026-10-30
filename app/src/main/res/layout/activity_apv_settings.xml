@@ -13,7 +13,7 @@
 
         <LinearLayout
             android:layout_width="match_parent"
-            android:layout_height="56dp"
+            android:layout_height="60dp"
             android:gravity="center_vertical"
             android:orientation="horizontal"
             android:paddingStart="4dp"
@@ -43,9 +43,40 @@
             android:layout_height="wrap_content"
             android:paddingStart="20dp"
             android:paddingEnd="20dp"
-            android:paddingTop="16dp"
-            android:text="업스케일"
-            android:textColor="?attr/colorPrimary"
+            android:paddingTop="14dp"
+            android:text="재생"
+            android:textColor="@color/owl_orange_dark"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+
+        <CheckBox
+            android:id="@+id/resumePlayback"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="60dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="자동 이어보기\n10초 이상 본 영상은 다음에 마지막 위치부터 재생"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <CheckBox
+            android:id="@+id/mxGestures"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="76dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="MX식 제스처\n좌우 드래그=탐색 · 왼쪽 세로=밝기 · 오른쪽 세로=볼륨\n더블탭 왼쪽/오른쪽=10초 이동 · 가운데=재생/일시정지"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="화질"
+            android:textColor="@color/owl_orange_dark"
             android:textSize="14sp"
             android:textStyle="bold" />
 
@@ -88,7 +119,7 @@
             android:minHeight="64dp"
             android:paddingStart="20dp"
             android:paddingEnd="20dp"
-            android:text="하드웨어 디코딩 우선\n렉·발열·배터리 사용을 줄이고 필요 시 소프트웨어로 대체"
+            android:text="하드웨어 디코딩 우선\n렉·발열·배터리 사용을 줄이고 지원되지 않으면 소프트웨어로 대체"
             android:textColor="?android:attr/textColorPrimary" />
 
         <TextView
@@ -98,7 +129,7 @@
             android:paddingStart="20dp"
             android:paddingEnd="20dp"
             android:text="자막"
-            android:textColor="?attr/colorPrimary"
+            android:textColor="@color/owl_orange_dark"
             android:textSize="14sp"
             android:textStyle="bold" />
 
@@ -108,7 +139,7 @@
             android:paddingStart="20dp"
             android:paddingEnd="20dp"
             android:paddingTop="10dp"
-            android:text="내장 자막과 외장 SRT/ASS/SSA 등을 지원합니다. 같은 폴더의 자막은 mpv가 자동 탐색하며, 재생 중 외부 자막을 직접 열 수도 있습니다."
+            android:text="내장 자막과 외장 SRT/ASS/SSA 등을 지원합니다. 같은 폴더의 자막은 mpv가 자동 탐색하며, 재생 중 자막 버튼을 길게 눌러 트랙을 직접 선택할 수 있습니다."
             android:textColor="?android:attr/textColorSecondary"
             android:textSize="14sp" />
     </LinearLayout>
