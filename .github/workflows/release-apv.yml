@@ -48,18 +48,18 @@ jobs:
 
       - name: Prepare Owl arm64 APK
         run: |
-          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.2.1-arm64.apk
-          sha256sum Owl-0.2.1-arm64.apk > Owl-0.2.1-arm64.sha256
+          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.2.2-arm64.apk
+          sha256sum Owl-0.2.2-arm64.apk > Owl-0.2.2-arm64.sha256
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v0.2.1 --yes 2>/dev/null || true
-          git push origin :refs/tags/v0.2.1 2>/dev/null || true
-          gh release create v0.2.1 \
-            Owl-0.2.1-arm64.apk \
-            Owl-0.2.1-arm64.sha256 \
+          gh release delete v0.2.2 --yes 2>/dev/null || true
+          git push origin :refs/tags/v0.2.2 2>/dev/null || true
+          gh release create v0.2.2 \
+            Owl-0.2.2-arm64.apk \
+            Owl-0.2.2-arm64.sha256 \
             --target "$GITHUB_SHA" \
-            --title "Owl 0.2.1" \
-            --notes "Fixes Owl launcher icon integration and status-bar/cutout overlap on modern Android. Keeps folder-first browsing, three upscaling modes, hardware decoding, and mpv/libass subtitle support."
+            --title "Owl 0.2.2" \
+            --notes "Applies exact status-bar, display-cutout and navigation-bar insets with no extra top gap. Retains the Owl icon fix, folder-first library, three upscaling modes, hardware decoding, and mpv/libass subtitle support."
