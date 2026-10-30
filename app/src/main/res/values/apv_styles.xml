@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <style name="ApvTheme" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/owl_orange</item>
+        <item name="colorOnPrimary">@color/owl_on_orange</item>
+        <item name="colorPrimaryContainer">@color/owl_orange_container</item>
+        <item name="colorOnPrimaryContainer">#5A2100</item>
+        <item name="colorSecondary">@color/owl_orange</item>
+        <item name="colorOnSecondary">@color/owl_on_orange</item>
+        <item name="colorTertiary">@color/owl_orange_dark</item>
+        <item name="colorControlActivated">@color/owl_orange</item>
+        <item name="android:colorAccent">@color/owl_orange</item>
         <item name="android:windowActionModeOverlay">true</item>
         <item name="android:navigationBarColor">?android:attr/colorBackground</item>
         <item name="android:statusBarColor">?android:attr/colorBackground</item>
