@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
+import android.view.View
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
@@ -96,12 +97,12 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
 
     private fun loadFolders() {
         emptyText.text = "영상 폴더를 찾는 중…"
-        emptyText.visibility = TextView.VISIBLE
+        emptyText.visibility = View.VISIBLE
         thread(name = "ApvMediaScan") {
             val folders = MediaLibrary.scan(this)
             runOnUiThread {
                 adapter.submit(folders)
-                emptyText.visibility = if (folders.isEmpty()) TextView.VISIBLE else TextView.GONE
+                emptyText.visibility = if (folders.isEmpty()) View.VISIBLE else View.GONE
                 if (folders.isEmpty()) emptyText.text = "영상이 있는 폴더를 찾지 못했습니다."
             }
         }
