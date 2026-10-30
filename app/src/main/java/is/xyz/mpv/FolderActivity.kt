@@ -145,12 +145,15 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
         // The exact list currently visible on screen becomes the player playlist.
         // Therefore Previous/Next always follows the user's selected sort order, top to bottom.
         OwlLaunchState.playlistStartIndex = startIndex
-        OwlLaunchState.resumePositionMs = history?.positionMs ?: -1L
+        OwlLaunchState.resumePositionMs = -1L
 
         val playerIntent = Intent(Intent.ACTION_VIEW).apply {
             setDataAndType(Uri.parse(video.uri), "video/*")
             setClass(this@FolderActivity, MPVActivity::class.java)
             putExtra("title", video.title)
+            history?.let {
+                putExtra("position", it.positionMs.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
+            }
             putStringArrayListExtra(
                 EXTRA_OWL_PLAYLIST,
                 ArrayList(displayedVideos.map { it.uri })
