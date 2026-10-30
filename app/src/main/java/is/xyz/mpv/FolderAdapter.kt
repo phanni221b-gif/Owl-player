@@ -12,16 +12,21 @@ class FolderAdapter(
 ) : RecyclerView.Adapter<FolderAdapter.Holder>() {
     private var allItems: List<MediaFolder> = emptyList()
     private var visibleItems: List<MediaFolder> = emptyList()
+    private var currentQuery: String = ""
 
     fun submit(items: List<MediaFolder>) {
         allItems = items
-        visibleItems = items
-        notifyDataSetChanged()
+        applyFilter()
     }
 
     fun filter(query: String) {
-        visibleItems = if (query.isBlank()) allItems else allItems.filter {
-            it.name.contains(query, ignoreCase = true)
+        currentQuery = query.trim()
+        applyFilter()
+    }
+
+    private fun applyFilter() {
+        visibleItems = if (currentQuery.isBlank()) allItems else allItems.filter {
+            it.name.contains(currentQuery, ignoreCase = true)
         }
         notifyDataSetChanged()
     }
@@ -44,7 +49,11 @@ class FolderAdapter(
 
         fun bind(item: MediaFolder) {
             title.text = item.name
-            count.text = "${item.videos.size} 비디오"
+            count.text = if (item.storageLabel.isBlank()) {
+                "${item.videos.size} 비디오"
+            } else {
+                "${item.storageLabel} · ${item.videos.size} 비디오"
+            }
             itemView.setOnClickListener { onClick(item) }
             icon.contentDescription = item.name
         }
