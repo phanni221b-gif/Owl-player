@@ -35,6 +35,21 @@ jobs:
           sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip gperf nasm
           sudo pip3 install meson pillow --break-system-packages
 
+      - name: Set Owl 0.3.1 version
+        run: |
+          sed -i 's/versionCode 55/versionCode 56/' app/build.gradle
+          sed -i 's/versionName "0.3.0"/versionName "0.3.1"/' app/build.gradle
+          grep -q 'versionCode 56' app/build.gradle
+          grep -q 'versionName "0.3.1"' app/build.gradle
+
+      - name: Restore stable Owl development signing key
+        run: |
+          mkdir -p "$HOME/.android"
+          base64 -d .github/owl-signing/debug-keystore.b64 > "$HOME/.android/debug.keystore"
+          echo '27809b3ba39dc05131743472fc76a69b1ced9c36b97dd658eabecdbdb4df6bf7  '$HOME'/.android/debug.keystore' | sha256sum -c -
+          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
+          chmod 600 "$HOME/.android/debug.keystore"
+
       - name: Restore verified Owl PNG and create standard mipmaps
         run: |
           base64 -d .github/owl-icon-source/icon192.b64 > /tmp/owl_launcher_icon.png
@@ -70,7 +85,6 @@ jobs:
                   check.load()
                   assert check.format == 'PNG'
                   assert check.size == (size, size)
-              print('generated', out, size)
           print('verified source SHA-256', digest)
           PY
 
@@ -94,17 +108,22 @@ jobs:
       - name: Build Owl APKs
         run: DONT_BUILD_RELEASE=1 buildscripts/include/ci.sh build
 
-      - name: Verify final APK launcher icon
+      - name: Verify final APK icon and stable signature
         run: |
           APK=app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk
           test -f "$APK"
           AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt | sort -V | tail -1)
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
           "$AAPT" dump badging "$APK" > /tmp/owl-badging.txt
 
           grep -q "application-label:'Owl'" /tmp/owl-badging.txt
           grep -q "launchable-activity: name='is.xyz.mpv.MainActivity'" /tmp/owl-badging.txt
           grep -Eq "application-icon-[0-9]+:'res/mipmap-[^']*/owl_launcher_icon\.png'" /tmp/owl-badging.txt
           ! grep -Eq "application-icon-[0-9]+:'res/[^']*mpv_launcher_icon" /tmp/owl-badging.txt
+
+          "$APKSIGNER" verify --print-certs "$APK" > /tmp/owl-signing.txt
+          grep -qi 'Signer #1 certificate SHA-256 digest: fdd5993cb01cb6e52092f1d48314c2067f5b8ce2b54eec0b4971b55bef5c1f41' /tmp/owl-signing.txt
+          cat /tmp/owl-signing.txt
 
           rm -rf /tmp/owl-apk
           mkdir /tmp/owl-apk
@@ -119,26 +138,22 @@ jobs:
               with Image.open(p) as im:
                   im.load()
                   assert im.format == 'PNG'
-                  print('APK icon OK', p, im.size)
           PY
-
-          echo '--- final launcher mapping ---'
-          grep -E 'application-label|application-icon|launchable-activity' /tmp/owl-badging.txt | head -30
 
       - name: Prepare Owl arm64 APK
         run: |
-          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.3.0-arm64.apk
-          sha256sum Owl-0.3.0-arm64.apk > Owl-0.3.0-arm64.sha256
+          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.3.1-arm64.apk
+          sha256sum Owl-0.3.1-arm64.apk > Owl-0.3.1-arm64.sha256
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v0.3.0 --yes 2>/dev/null || true
-          git push origin :refs/tags/v0.3.0 2>/dev/null || true
-          gh release create v0.3.0 \
-            Owl-0.3.0-arm64.apk \
-            Owl-0.3.0-arm64.sha256 \
+          gh release delete v0.3.1 --yes 2>/dev/null || true
+          git push origin :refs/tags/v0.3.1 2>/dev/null || true
+          gh release create v0.3.1 \
+            Owl-0.3.1-arm64.apk \
+            Owl-0.3.1-arm64.sha256 \
             --target "$GITHUB_SHA" \
-            --title "Owl 0.3.0" \
-            --notes "MX-style usability update: Hermès-inspired orange theme, responsive Fold layout, folder and video sorting, lazy thumbnails, video metadata, automatic resume progress, MX-style gestures, simplified player controls, and existing mpv subtitle/hardware decode/upscaling support preserved."
+            --title "Owl 0.3.1" \
+            --notes "Decoder update: Auto now explicitly prioritizes HW+ (MediaCodec direct), then HW (MediaCodec copy), then software fallback. Settings expose Auto/HW+/HW/SW. This is also the first Owl release signed with a stable development key so future Owl updates can install over it. Because older Owl releases used ephemeral GitHub Actions debug signing, uninstall the currently installed older Owl once before installing 0.3.1."
