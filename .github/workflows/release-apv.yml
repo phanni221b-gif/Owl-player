@@ -35,21 +35,53 @@ jobs:
           sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip gperf nasm
           sudo pip3 install meson pillow --break-system-packages
 
-      - name: Verify direct Owl bitmap icon
+      - name: Restore verified Owl PNG and create standard mipmaps
         run: |
-          test -f app/src/main/res/mipmap-xxxhdpi/owl_launcher_icon.png
-          test ! -e app/src/main/res/mipmap-anydpi-v26/owl_launcher_icon.xml
+          base64 -d .github/owl-icon-source/icon192.b64 > /tmp/owl_launcher_icon.png
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+          import hashlib
+
+          source = Path('/tmp/owl_launcher_icon.png')
+          raw = source.read_bytes()
+          digest = hashlib.sha256(raw).hexdigest()
+          expected = '9f8ad69dffea19a55f0270971220c20b332970728a40edcc7cbc3ec0c15c9bd6'
+          assert digest == expected, (digest, expected)
+
+          with Image.open(source) as im:
+              im.load()
+              assert im.format == 'PNG', im.format
+              assert im.size == (192, 192), im.size
+              master = im.convert('RGBA')
+
+          sizes = {
+              'mipmap-mdpi': 48,
+              'mipmap-hdpi': 72,
+              'mipmap-xhdpi': 96,
+              'mipmap-xxhdpi': 144,
+              'mipmap-xxxhdpi': 192,
+          }
+          for folder, size in sizes.items():
+              out = Path('app/src/main/res') / folder / 'owl_launcher_icon.png'
+              out.parent.mkdir(parents=True, exist_ok=True)
+              master.resize((size, size), Image.Resampling.LANCZOS).save(out, 'PNG', optimize=True)
+              with Image.open(out) as check:
+                  check.load()
+                  assert check.format == 'PNG'
+                  assert check.size == (size, size)
+              print('generated', out, size)
+          print('verified source SHA-256', digest)
+          PY
+
+          rm -f app/src/main/res/mipmap-anydpi-v26/owl_launcher_icon.xml
+          rm -f app/src/main/res/mipmap-anydpi-v26/owl_launcher_foreground.xml
+          rm -f app/src/main/res/mipmap-xxxhdpi/owl_launcher_art.webp
+          rm -f app/src/main/res/mipmap-xxxhdpi/owl_launcher_icon.webp
+
           grep -q 'android:icon="@mipmap/owl_launcher_icon"' app/src/main/AndroidManifest.xml
           grep -q 'android:roundIcon="@mipmap/owl_launcher_icon"' app/src/main/AndroidManifest.xml
-          python3 - <<'PY'
-          from PIL import Image
-          p='app/src/main/res/mipmap-xxxhdpi/owl_launcher_icon.png'
-          with Image.open(p) as im:
-              im.load()
-              assert im.format == 'PNG'
-              assert im.size == (192, 192), im.size
-              print('Owl launcher PNG OK', im.size)
-          PY
+          ! grep -q 'mpv_launcher_icon' app/src/main/AndroidManifest.xml
 
       - name: Download or build native dependencies
         run: |
@@ -62,19 +94,34 @@ jobs:
       - name: Build Owl APKs
         run: DONT_BUILD_RELEASE=1 buildscripts/include/ci.sh build
 
-      - name: Verify final APK launcher mapping
+      - name: Verify final APK launcher icon
         run: |
           APK=app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk
           test -f "$APK"
           AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt | sort -V | tail -1)
           "$AAPT" dump badging "$APK" > /tmp/owl-badging.txt
+
           grep -q "application-label:'Owl'" /tmp/owl-badging.txt
           grep -q "launchable-activity: name='is.xyz.mpv.MainActivity'" /tmp/owl-badging.txt
           grep -Eq "application-icon-[0-9]+:'res/mipmap-[^']*/owl_launcher_icon\.png'" /tmp/owl-badging.txt
-          if grep -Eq "application-icon-[0-9]+:'res/[^']*mpv_launcher_icon" /tmp/owl-badging.txt; then
-            echo 'Launcher still points to mpv icon'
-            exit 1
-          fi
+          ! grep -Eq "application-icon-[0-9]+:'res/[^']*mpv_launcher_icon" /tmp/owl-badging.txt
+
+          rm -rf /tmp/owl-apk
+          mkdir /tmp/owl-apk
+          unzip -q "$APK" -d /tmp/owl-apk
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image
+
+          icons = sorted(Path('/tmp/owl-apk/res').rglob('owl_launcher_icon.png'))
+          assert icons, 'No Owl launcher PNGs found in APK'
+          for p in icons:
+              with Image.open(p) as im:
+                  im.load()
+                  assert im.format == 'PNG'
+                  print('APK icon OK', p, im.size)
+          PY
+
           echo '--- final launcher mapping ---'
           grep -E 'application-label|application-icon|launchable-activity' /tmp/owl-badging.txt | head -30
 
@@ -94,4 +141,4 @@ jobs:
             Owl-0.2.4-arm64.sha256 \
             --target "$GITHUB_SHA" \
             --title "Owl 0.2.4" \
-            --notes "Uses the direct standard Owl PNG launcher icon with the Android 8+ adaptive icon override removed. Build verifies the final APK launcher mapping before release."
+            --notes "Launcher icon simplified to standard PNG mipmaps generated from one verified 192px Owl PNG source. Adaptive/WebP icon overrides are removed. The release is published only after source SHA-256, PNG decoding, APK icon decoding and AAPT launcher mapping all pass."
