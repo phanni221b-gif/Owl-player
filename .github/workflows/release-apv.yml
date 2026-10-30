@@ -49,6 +49,7 @@ jobs:
           grep -q 'playlist-start' app/src/main/java/is/xyz/mpv/BaseMPVView.kt
           grep -q 'makeMemoryPlaylist' app/src/main/java/is/xyz/mpv/FolderActivity.kt
           grep -q 'displayedVideos' app/src/main/java/is/xyz/mpv/FolderActivity.kt
+          grep -q 'EXTRA_OWL_PLAYLIST' app/src/main/java/is/xyz/mpv/FolderActivity.kt
           grep -q 'video-zoom' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'video-pan-x' app/src/main/java/is/xyz/mpv/TouchGestures.kt
           grep -q 'class ScreenModeButton' app/src/main/java/is/xyz/mpv/ScreenModeButton.kt
