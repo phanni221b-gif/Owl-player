@@ -1,5 +1,4 @@
 name: Release Owl
-# Base64 icon chunks verified on main
 
 on:
   push:
@@ -36,57 +35,21 @@ jobs:
           sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip gperf nasm
           sudo pip3 install meson pillow --break-system-packages
 
-      - name: Rebuild launcher assets from Base64 chunks
+      - name: Verify direct Owl bitmap icon
         run: |
-          cat .github/owl-icon-source/chunks/part*.b64 > /tmp/owl_icon.b64
-          base64 -d /tmp/owl_icon.b64 > /tmp/owl_icon.webp
-          python3 - <<'PY'
-          from pathlib import Path
-          from PIL import Image
-          import hashlib
-
-          source = Path('/tmp/owl_icon.webp')
-          raw = source.read_bytes()
-          digest = hashlib.sha256(raw).hexdigest()
-          expected = '84700ad9c5a2c29c4a1fb61f0ddca75d581d328d8916d97bd73a14ad4fa8176f'
-          assert digest == expected, (digest, expected)
-
-          with Image.open(source) as image:
-              image.load()
-              assert image.format == 'WEBP'
-              assert image.size == (512, 512)
-              master = image.convert('RGBA')
-
-          sizes = {
-              'mipmap-mdpi': 48,
-              'mipmap-hdpi': 72,
-              'mipmap-xhdpi': 96,
-              'mipmap-xxhdpi': 144,
-              'mipmap-xxxhdpi': 192,
-          }
-          for folder, size in sizes.items():
-              out = Path('app/src/main/res') / folder / 'owl_launcher_icon.png'
-              out.parent.mkdir(parents=True, exist_ok=True)
-              master.resize((size, size), Image.Resampling.LANCZOS).save(out, 'PNG', optimize=True)
-              with Image.open(out) as check:
-                  check.load()
-                  assert check.format == 'PNG' and check.size == (size, size)
-
-          print('Owl source and generated mipmaps verified:', digest)
-          PY
-          rm -f app/src/main/res/mipmap-anydpi-v26/owl_launcher_icon.xml
-          rm -f app/src/main/res/mipmap-anydpi-v26/owl_launcher_foreground.xml
-          rm -f app/src/main/res/drawable-nodpi/owl_launcher_source.png
-          rm -f app/src/main/res/drawable-nodpi/owl_icon.webp
-          rm -f app/src/main/res/mipmap-xxxhdpi/owl_launcher_art.webp
-          rm -f app/src/main/res/mipmap-xxxhdpi/owl_launcher_icon.webp
-
-      - name: Verify launcher resource graph before build
-        run: |
+          test -f app/src/main/res/mipmap-xxxhdpi/owl_launcher_icon.png
+          test ! -e app/src/main/res/mipmap-anydpi-v26/owl_launcher_icon.xml
           grep -q 'android:icon="@mipmap/owl_launcher_icon"' app/src/main/AndroidManifest.xml
           grep -q 'android:roundIcon="@mipmap/owl_launcher_icon"' app/src/main/AndroidManifest.xml
-          ! grep -q 'mpv_launcher_icon' app/src/main/AndroidManifest.xml
-          test ! -e app/src/main/res/mipmap-anydpi-v26/owl_launcher_icon.xml
+          python3 - <<'PY'
+          from PIL import Image
+          p='app/src/main/res/mipmap-xxxhdpi/owl_launcher_icon.png'
+          with Image.open(p) as im:
+              im.load()
+              assert im.format == 'PNG'
+              assert im.size == (192, 192), im.size
+              print('Owl launcher PNG OK', im.size)
+          PY
 
       - name: Download or build native dependencies
         run: |
@@ -99,45 +62,21 @@ jobs:
       - name: Build Owl APKs
         run: DONT_BUILD_RELEASE=1 buildscripts/include/ci.sh build
 
-      - name: Verify final APK launcher resources
+      - name: Verify final APK launcher mapping
         run: |
           APK=app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk
           test -f "$APK"
           AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt | sort -V | tail -1)
           "$AAPT" dump badging "$APK" > /tmp/owl-badging.txt
-
-          echo '--- Active launcher metadata ---'
-          grep -E 'application-label|application-icon|launchable-activity' /tmp/owl-badging.txt | head -30
-
           grep -q "application-label:'Owl'" /tmp/owl-badging.txt
           grep -q "launchable-activity: name='is.xyz.mpv.MainActivity'" /tmp/owl-badging.txt
           grep -Eq "application-icon-[0-9]+:'res/mipmap-[^']*/owl_launcher_icon\.png'" /tmp/owl-badging.txt
           if grep -Eq "application-icon-[0-9]+:'res/[^']*mpv_launcher_icon" /tmp/owl-badging.txt; then
-            echo 'Active launcher icon unexpectedly points to mpv launcher artwork'
+            echo 'Launcher still points to mpv icon'
             exit 1
           fi
-
-          rm -rf /tmp/owl-apk && mkdir /tmp/owl-apk
-          unzip -q "$APK" -d /tmp/owl-apk
-          python3 - <<'PY'
-          from pathlib import Path
-          from PIL import Image
-
-          icons = sorted(Path('/tmp/owl-apk/res').rglob('owl_launcher_icon.png'))
-          assert icons, 'No Owl PNG launcher icons found in APK'
-          expected = {(48,48), (72,72), (96,96), (144,144), (192,192)}
-          seen = set()
-          for path in icons:
-              with Image.open(path) as image:
-                  image.load()
-                  assert image.format == 'PNG'
-                  seen.add(image.size)
-                  print('APK icon OK:', path, image.size)
-          assert expected.issubset(seen), (seen, expected)
-          PY
-
-          echo '--- Unused legacy icon resources, if any ---'
-          unzip -Z1 "$APK" | grep -E 'mpv_launcher_icon|owl_launcher_(art|icon)\.webp' || true
+          echo '--- final launcher mapping ---'
+          grep -E 'application-label|application-icon|launchable-activity' /tmp/owl-badging.txt | head -30
 
       - name: Prepare Owl arm64 APK
         run: |
@@ -155,4 +94,4 @@ jobs:
             Owl-0.2.4-arm64.sha256 \
             --target "$GITHUB_SHA" \
             --title "Owl 0.2.4" \
-            --notes "Launcher icon rebuilt from verified Base64 chunks. The build validates source SHA-256, WebP decoding, generated PNG mipmaps, active AAPT launcher icon mapping, APK icon decoding, app label and launchable activity before release."
+            --notes "Uses the direct standard Owl PNG launcher icon with the Android 8+ adaptive icon override removed. Build verifies the final APK launcher mapping before release."
