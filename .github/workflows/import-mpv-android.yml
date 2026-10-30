@@ -2,10 +2,6 @@ name: Import mpv-android source
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - '.github/workflows/import-mpv-android.yml'
-  pull_request:
 
 permissions:
   contents: write
