@@ -60,13 +60,23 @@
             android:textColor="?android:attr/textColorPrimary" />
 
         <CheckBox
+            android:id="@+id/videoAutoRotate"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:minHeight="64dp"
+            android:paddingStart="20dp"
+            android:paddingEnd="20dp"
+            android:text="영상에 맞춰 자동 회전\n가로 영상은 가로, 세로 영상은 세로로 자동 전환"
+            android:textColor="?android:attr/textColorPrimary" />
+
+        <CheckBox
             android:id="@+id/mxGestures"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:minHeight="76dp"
+            android:minHeight="96dp"
             android:paddingStart="20dp"
             android:paddingEnd="20dp"
-            android:text="MX식 제스처\n좌우 드래그=탐색 · 왼쪽 세로=밝기 · 오른쪽 세로=볼륨\n더블탭 왼쪽/오른쪽=10초 이동 · 가운데=재생/일시정지"
+            android:text="MX식 제스처\n좌우 드래그=탐색 · 왼쪽 세로=밝기 · 오른쪽 세로=볼륨\n더블탭 왼쪽/오른쪽=10초 이동 · 가운데=재생/일시정지\n두 손가락 핀치=확대/축소 · 확대 후 두 손가락 이동=화면 이동"
             android:textColor="?android:attr/textColorPrimary" />
 
         <TextView
