@@ -44,26 +44,47 @@ class ApvSettingsActivity : AppCompatActivity(R.layout.activity_apv_settings) {
             applyMode(this, mode)
         }
 
-        findViewById<CheckBox>(R.id.hardwareDecode).apply {
-            isChecked = prefs.getBoolean("hardware_decoding", true)
-            setOnCheckedChangeListener { _, checked ->
-                prefs.edit().putBoolean("hardware_decoding", checked).apply()
+        val decoders = findViewById<RadioGroup>(R.id.decoderModes)
+        when (prefs.getString(KEY_DECODER_MODE, DECODER_AUTO)) {
+            DECODER_HW_PLUS -> decoders.check(R.id.decoderHwPlus)
+            DECODER_HW -> decoders.check(R.id.decoderHw)
+            DECODER_SW -> decoders.check(R.id.decoderSw)
+            else -> decoders.check(R.id.decoderAuto)
+        }
+        decoders.setOnCheckedChangeListener { _, checkedId ->
+            val mode = when (checkedId) {
+                R.id.decoderHwPlus -> DECODER_HW_PLUS
+                R.id.decoderHw -> DECODER_HW
+                R.id.decoderSw -> DECODER_SW
+                else -> DECODER_AUTO
             }
+            prefs.edit()
+                .putString(KEY_DECODER_MODE, mode)
+                .putBoolean("hardware_decoding", mode != DECODER_SW)
+                .apply()
         }
     }
 
     companion object {
         private const val KEY_MODE = "apv_upscale_mode"
         private const val KEY_RESUME = "owl_resume_playback"
+        const val KEY_DECODER_MODE = "owl_decoder_mode"
+
         private const val MODE_BALANCED = "balanced"
         private const val MODE_SHARP = "sharp"
         private const val MODE_ULTRA = "ultra"
+
+        const val DECODER_AUTO = "auto"
+        const val DECODER_HW_PLUS = "hw_plus"
+        const val DECODER_HW = "hw"
+        const val DECODER_SW = "sw"
 
         fun ensureDefaults(context: Context) {
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
             if (!prefs.contains(KEY_MODE)) applyMode(context, MODE_BALANCED)
 
             val edit = prefs.edit()
+            if (!prefs.contains(KEY_DECODER_MODE)) edit.putString(KEY_DECODER_MODE, DECODER_AUTO)
             if (!prefs.contains("hardware_decoding")) edit.putBoolean("hardware_decoding", true)
             if (!prefs.contains(KEY_RESUME)) edit.putBoolean(KEY_RESUME, true)
             if (!prefs.contains("display_media_title")) edit.putBoolean("display_media_title", true)
