@@ -46,20 +46,31 @@ jobs:
       - name: Build Owl APKs
         run: DONT_BUILD_RELEASE=1 buildscripts/include/ci.sh build
 
+      - name: Verify merged manifest uses Owl icon
+        run: |
+          MERGED="app/build/intermediates/merged_manifests/allstorageDebug/processAllstorageDebugManifest/AndroidManifest.xml"
+          if [ ! -f "$MERGED" ]; then
+            MERGED=$(find app/build/intermediates -path '*allstorageDebug*' -name AndroidManifest.xml | head -1)
+          fi
+          test -n "$MERGED"
+          grep -q 'mipmap/owl_launcher_icon' "$MERGED"
+          ! grep -q 'mipmap/mpv_launcher_icon' "$MERGED"
+          echo "Verified merged manifest: $MERGED"
+
       - name: Prepare Owl arm64 APK
         run: |
-          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.2.2-arm64.apk
-          sha256sum Owl-0.2.2-arm64.apk > Owl-0.2.2-arm64.sha256
+          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.2.3-arm64.apk
+          sha256sum Owl-0.2.3-arm64.apk > Owl-0.2.3-arm64.sha256
 
       - name: Publish GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release delete v0.2.2 --yes 2>/dev/null || true
-          git push origin :refs/tags/v0.2.2 2>/dev/null || true
-          gh release create v0.2.2 \
-            Owl-0.2.2-arm64.apk \
-            Owl-0.2.2-arm64.sha256 \
+          gh release delete v0.2.3 --yes 2>/dev/null || true
+          git push origin :refs/tags/v0.2.3 2>/dev/null || true
+          gh release create v0.2.3 \
+            Owl-0.2.3-arm64.apk \
+            Owl-0.2.3-arm64.sha256 \
             --target "$GITHUB_SHA" \
-            --title "Owl 0.2.2" \
-            --notes "Applies exact status-bar, display-cutout and navigation-bar insets with no extra top gap. Retains the Owl icon fix, folder-first library, three upscaling modes, hardware decoding, and mpv/libass subtitle support."
+            --title "Owl 0.2.3" \
+            --notes "Hardwires the intended glossy orange Owl launcher artwork in the base application and launcher activity manifests, instead of relying on the old mpv launcher icon path. The build also verifies the final merged manifest contains only the Owl launcher icon reference. Keeps the status-bar/inset fix and existing playback, upscaling and subtitle features."
