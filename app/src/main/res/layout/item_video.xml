@@ -1,32 +1,52 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="72dp"
+    android:layout_height="wrap_content"
+    android:minHeight="92dp"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:paddingStart="16dp"
+    android:paddingStart="12dp"
     android:paddingEnd="16dp"
+    android:paddingTop="10dp"
+    android:paddingBottom="10dp"
     android:foreground="?attr/selectableItemBackground">
 
-    <ImageView
-        android:layout_width="44dp"
-        android:layout_height="44dp"
-        android:src="@drawable/ic_play_arrow_black_24dp"
-        android:tint="?attr/colorPrimary"
-        android:contentDescription="영상" />
+    <FrameLayout
+        android:layout_width="128dp"
+        android:layout_height="72dp">
+
+        <ImageView
+            android:id="@+id/videoThumbnail"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:background="#16000000"
+            android:scaleType="centerCrop"
+            android:contentDescription="영상 썸네일" />
+
+        <ProgressBar
+            android:id="@+id/videoProgress"
+            style="?android:attr/progressBarStyleHorizontal"
+            android:layout_width="match_parent"
+            android:layout_height="3dp"
+            android:layout_gravity="bottom"
+            android:max="1000"
+            android:progressTint="@color/owl_orange"
+            android:progressBackgroundTint="#55FFFFFF"
+            android:visibility="gone" />
+    </FrameLayout>
 
     <LinearLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
         android:layout_weight="1"
-        android:layout_marginStart="12dp"
+        android:layout_marginStart="14dp"
         android:orientation="vertical">
 
         <TextView
             android:id="@+id/videoTitle"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:maxLines="1"
+            android:maxLines="2"
             android:ellipsize="end"
             android:textColor="?android:attr/textColorPrimary"
             android:textSize="15sp" />
@@ -35,9 +55,20 @@
             android:id="@+id/videoMeta"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
+            android:layout_marginTop="6dp"
             android:maxLines="1"
+            android:ellipsize="end"
             android:textColor="?android:attr/textColorSecondary"
             android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/videoResume"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:maxLines="1"
+            android:textColor="@color/owl_orange_dark"
+            android:textSize="12sp"
+            android:visibility="gone" />
     </LinearLayout>
 </LinearLayout>
