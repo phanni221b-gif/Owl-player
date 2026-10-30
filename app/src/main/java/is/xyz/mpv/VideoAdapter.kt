@@ -3,12 +3,15 @@ package `is`.xyz.mpv
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import java.util.Locale
 
 class VideoAdapter(
-    private val onClick: (MediaVideo) -> Unit
+    private val onClick: (MediaVideo) -> Unit,
+    private val onLongClick: (MediaVideo) -> Unit = {}
 ) : RecyclerView.Adapter<VideoAdapter.Holder>() {
     private var items: List<MediaVideo> = emptyList()
 
@@ -16,6 +19,8 @@ class VideoAdapter(
         items = videos
         notifyDataSetChanged()
     }
+
+    fun refreshProgress() = notifyDataSetChanged()
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
         return Holder(LayoutInflater.from(parent.context).inflate(R.layout.item_video, parent, false))
@@ -26,16 +31,60 @@ class VideoAdapter(
     override fun onBindViewHolder(holder: Holder, position: Int) = holder.bind(items[position])
 
     inner class Holder(view: View) : RecyclerView.ViewHolder(view) {
+        private val thumbnail: ImageView = view.findViewById(R.id.videoThumbnail)
+        private val progress: ProgressBar = view.findViewById(R.id.videoProgress)
         private val title: TextView = view.findViewById(R.id.videoTitle)
         private val meta: TextView = view.findViewById(R.id.videoMeta)
+        private val resume: TextView = view.findViewById(R.id.videoResume)
 
         fun bind(item: MediaVideo) {
             title.text = item.title
             val duration = formatDuration(item.durationMs)
-            val resolution = if (item.width > 0 && item.height > 0) "${item.width}×${item.height}" else ""
-            meta.text = listOf(duration, resolution).filter { it.isNotBlank() }.joinToString("  ·  ")
+            val resolution = formatResolution(item.width, item.height)
+            val size = formatSize(item.sizeBytes)
+            meta.text = listOf(duration, resolution, size).filter { it.isNotBlank() }.joinToString("  ·  ")
+
+            VideoThumbnailLoader.load(thumbnail, item)
+
+            val history = PlaybackHistory.get(itemView.context, item)
+            if (history != null) {
+                progress.visibility = View.VISIBLE
+                progress.progress = history.progress
+                resume.visibility = View.VISIBLE
+                resume.text = "이어보기 ${formatDuration(history.positionMs)} / ${formatDuration(history.durationMs)}"
+            } else {
+                progress.visibility = View.GONE
+                progress.progress = 0
+                resume.visibility = View.GONE
+                resume.text = ""
+            }
+
             itemView.setOnClickListener { onClick(item) }
+            itemView.setOnLongClickListener {
+                onLongClick(item)
+                true
+            }
         }
+    }
+
+    private fun formatResolution(width: Int, height: Int): String {
+        if (width <= 0 || height <= 0) return ""
+        val longSide = maxOf(width, height)
+        val shortSide = minOf(width, height)
+        return when {
+            longSide >= 3800 && shortSide >= 2000 -> "4K"
+            longSide >= 2500 && shortSide >= 1400 -> "1440p"
+            longSide >= 1900 && shortSide >= 1000 -> "1080p"
+            longSide >= 1200 && shortSide >= 700 -> "720p"
+            else -> "${width}×${height}"
+        }
+    }
+
+    private fun formatSize(bytes: Long): String {
+        if (bytes <= 0L) return ""
+        val mb = bytes / (1024.0 * 1024.0)
+        return if (mb >= 1024.0) String.format(Locale.US, "%.1f GB", mb / 1024.0)
+        else String.format(Locale.US, "%.0f MB", mb)
     }
 
     private fun formatDuration(ms: Long): String {
