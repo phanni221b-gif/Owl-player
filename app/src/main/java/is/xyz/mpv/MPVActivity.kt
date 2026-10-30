@@ -1078,7 +1078,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             Intent.ACTION_VIEW -> {
                 // Owl opens the exact list currently visible in FolderActivity as a memory
                 // playlist, so Previous/Next follows the user's chosen sort order top-to-bottom.
-                val owlPlaylist = intent.getStringArrayListExtra(FolderActivity.EXTRA_OWL_PLAYLIST)
+                val owlPlaylist = intent.getStringArrayListExtra("owl_playlist_uris")
                 if (!owlPlaylist.isNullOrEmpty()) {
                     val paths = owlPlaylist.mapNotNull { raw ->
                         try {
