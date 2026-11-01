@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.Settings
 import android.view.View
+import android.widget.Button
 import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
@@ -36,6 +37,8 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private lateinit var recycler: RecyclerView
     private lateinit var emptyText: TextView
     private lateinit var swipeRefresh: SwipeRefreshLayout
+    private lateinit var browseControls: View
+    private lateinit var storageButton: Button
     private val adapter = FolderAdapter(::openFolder, ::onFolderSelectionChanged)
     private var scanJob: Job? = null
     private var fileJob: Job? = null
@@ -43,6 +46,8 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private var pendingForce = false
     private var waitingForAllFiles = false
     private var currentFolders: List<MediaFolder> = emptyList()
+    private var storageRoots: List<StorageRoot> = emptyList()
+    private var selectedStoragePath: String? = null
     private var sortMode = SORT_NAME
     private var pendingMoveFolders: List<MediaFolder> = emptyList()
 
@@ -74,11 +79,17 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         SystemBarInsets.apply(findViewById(R.id.mainRoot))
         ApvSettingsActivity.ensureDefaults(this)
 
-        sortMode = getSharedPreferences(PREFS_UI, MODE_PRIVATE).getInt(KEY_SORT, SORT_NAME)
+        val prefs = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
+        sortMode = prefs.getInt(KEY_SORT, SORT_NAME)
+        selectedStoragePath = prefs.getString(StorageBrowserActivity.KEY_STORAGE_ROOT, null)
+        storageRoots = StorageBrowser.roots(this)
+        validateSelectedStorage(fallbackToPrimary = false)
 
         recycler = findViewById(R.id.folderRecycler)
         emptyText = findViewById(R.id.emptyText)
         swipeRefresh = findViewById(R.id.mainSwipeRefresh)
+        browseControls = findViewById(R.id.mainBrowseControls)
+        storageButton = findViewById(R.id.mainStorageButton)
         recycler.layoutManager = GridLayoutManager(this, 3)
         recycler.adapter = adapter
         OwlDiagnostics.attach(this, this, recycler)
@@ -91,6 +102,9 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         findViewById<ImageButton>(R.id.settingsButton).setOnClickListener {
             startActivity(Intent(this, ApvSettingsActivity::class.java))
         }
+        storageButton.setOnClickListener { showStorageMenu() }
+        findViewById<Button>(R.id.mainBrowseButton).setOnClickListener { openStorageBrowser() }
+        updateStorageButton()
 
         findViewById<View>(R.id.mainSelectionClose).setOnClickListener { adapter.clearSelection() }
         findViewById<View>(R.id.mainSelectAll).setOnClickListener { adapter.selectAllVisible() }
@@ -106,16 +120,52 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
 
     override fun onResume() {
         super.onResume()
+        val previousRoots = storageRoots
+        storageRoots = StorageBrowser.roots(this)
+        if (selectedStoragePath != null && previousRoots.isNotEmpty()) {
+            validateSelectedStorage(fallbackToPrimary = true)
+        } else {
+            validateSelectedStorage(fallbackToPrimary = false)
+        }
+        updateStorageButton()
         if (waitingForAllFiles && hasAllFilesAccess()) {
             waitingForAllFiles = false
             ensureAccess()
         }
         recycler.post { updateGridSpan() }
         if (scanJob?.isCompleted == true) displayFolders(MediaLibrary.cache)
+        else if (currentFolders.isNotEmpty()) applySort()
+    }
+
+    private fun validateSelectedStorage(fallbackToPrimary: Boolean) {
+        val selected = selectedStoragePath ?: return
+        if (storageRoots.any { it.path == selected }) return
+        if (!fallbackToPrimary) {
+            selectedStoragePath = null
+            return
+        }
+        selectedStoragePath = storageRoots.firstOrNull { it.primary }?.path
+        persistStorageSelection()
+    }
+
+    private fun persistStorageSelection() {
+        val edit = getSharedPreferences(PREFS_UI, MODE_PRIVATE).edit()
+        val selected = selectedStoragePath
+        if (selected.isNullOrBlank()) edit.remove(StorageBrowserActivity.KEY_STORAGE_ROOT)
+        else edit.putString(StorageBrowserActivity.KEY_STORAGE_ROOT, selected)
+        edit.apply()
+    }
+
+    private fun updateStorageButton() {
+        if (!::storageButton.isInitialized) return
+        storageButton.text = selectedStoragePath?.let { selected ->
+            storageRoots.firstOrNull { it.path == selected }?.label
+        } ?: "전체 저장소"
     }
 
     private fun onFolderSelectionChanged(count: Int) {
         findViewById<View>(R.id.mainToolbar).visibility = if (count == 0) View.VISIBLE else View.GONE
+        browseControls.visibility = if (count == 0) View.VISIBLE else View.GONE
         findViewById<View>(R.id.mainSelectionBar).visibility = if (count == 0) View.GONE else View.VISIBLE
         findViewById<TextView>(R.id.mainSelectionCount).text = "${count}개 선택"
         if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = count == 0
@@ -200,8 +250,6 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private fun displayFolders(folders: List<MediaFolder>) {
         currentFolders = folders
         applySort()
-        emptyText.visibility = if (folders.isEmpty()) View.VISIBLE else View.GONE
-        if (folders.isEmpty()) emptyText.text = "영상이 있는 폴더를 찾지 못했습니다."
     }
 
     override fun onStop() {
@@ -220,19 +268,31 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         }
     }
 
+    private fun scopedFolders(): List<MediaFolder> =
+        StorageBrowser.filterFolders(currentFolders, selectedStoragePath)
+
     private fun applySort() {
+        val scoped = scopedFolders()
         val sorted = when (sortMode) {
-            SORT_COUNT -> currentFolders.sortedWith(
+            SORT_COUNT -> scoped.sortedWith(
                 compareByDescending<MediaFolder> { it.videos.size }
                     .thenBy { it.name.lowercase(Locale.getDefault()) }
             )
-            SORT_RECENT -> currentFolders.sortedWith(
+            SORT_RECENT -> scoped.sortedWith(
                 compareByDescending<MediaFolder> { it.newestModifiedSeconds }
                     .thenBy { it.name.lowercase(Locale.getDefault()) }
             )
-            else -> currentFolders.sortedBy { it.name.lowercase(Locale.getDefault()) }
+            else -> scoped.sortedBy { it.name.lowercase(Locale.getDefault()) }
         }
         adapter.submit(sorted)
+        emptyText.visibility = if (sorted.isEmpty()) View.VISIBLE else View.GONE
+        if (sorted.isEmpty()) {
+            emptyText.text = if (selectedStoragePath == null) {
+                "영상이 있는 폴더를 찾지 못했습니다."
+            } else {
+                "선택한 저장소에서 영상 폴더를 찾지 못했습니다."
+            }
+        }
     }
 
     private fun showSortMenu() {
@@ -262,6 +322,32 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             .show()
     }
 
+    private fun showStorageMenu() {
+        storageRoots = StorageBrowser.roots(this)
+        val labels = arrayOf("전체 저장소", *storageRoots.map { it.label }.toTypedArray())
+        val checked = selectedStoragePath?.let { selected ->
+            storageRoots.indexOfFirst { it.path == selected }.takeIf { it >= 0 }?.plus(1)
+        } ?: 0
+        AlertDialog.Builder(this)
+            .setTitle("저장소 선택")
+            .setSingleChoiceItems(labels, checked) { dialog, which ->
+                selectedStoragePath = if (which == 0) null else storageRoots.getOrNull(which - 1)?.path
+                persistStorageSelection()
+                updateStorageButton()
+                adapter.clearSelection()
+                applySort()
+                dialog.dismiss()
+            }
+            .show()
+    }
+
+    private fun openStorageBrowser(query: String? = null) {
+        startActivity(Intent(this, StorageBrowserActivity::class.java).apply {
+            selectedStoragePath?.let { putExtra(StorageBrowserActivity.EXTRA_ROOT_PATH, it) }
+            if (!query.isNullOrBlank()) putExtra(StorageBrowserActivity.EXTRA_QUERY, query)
+        })
+    }
+
     private fun openFolder(folder: MediaFolder) {
         startActivity(Intent(this, FolderActivity::class.java).apply {
             putExtra(FolderActivity.EXTRA_FOLDER_KEY, folder.key)
@@ -270,12 +356,20 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     }
 
     private fun showSearch() {
-        val input = EditText(this).apply { hint = "폴더 이름 검색" }
+        val input = EditText(this).apply {
+            hint = "파일 또는 폴더 이름"
+            setSingleLine(true)
+        }
+        val scope = selectedStoragePath?.let { selected ->
+            storageRoots.firstOrNull { it.path == selected }?.label
+        } ?: "전체 저장소"
         AlertDialog.Builder(this)
-            .setTitle("검색")
+            .setTitle("$scope 이하 검색")
             .setView(input)
-            .setPositiveButton("적용") { _, _ -> adapter.filter(input.text.toString()) }
-            .setNeutralButton("초기화") { _, _ -> adapter.filter("") }
+            .setPositiveButton("검색") { _, _ ->
+                val query = input.text.toString().trim()
+                if (query.isNotEmpty()) openStorageBrowser(query)
+            }
             .setNegativeButton("취소", null)
             .show()
     }
