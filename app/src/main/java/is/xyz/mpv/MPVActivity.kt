@@ -189,6 +189,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
     private var screenMode = SCREEN_MODE_FIT
     private var playerInitialized = false
+    private var qualityController: QualityPlaybackController? = null
     private var taskExitRequested = false
     /* * */
 
@@ -314,6 +315,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         player.initialize(filesDir.path, cacheDir.path)
         playerInitialized = true
         OwlSession.playerReady = true
+        qualityController = QualityPlaybackController(applicationContext)
         OwlDiagnostics.attach(this, this, playbackReady = { playerInitialized })
         applyScreenMode(screenMode, notify = false)
         player.playFile(filepath)
@@ -398,6 +400,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         stopServiceHandler.removeCallbacksAndMessages(null)
         fadeHandler.removeCallbacksAndMessages(null)
         BackgroundPlaybackService.stopAndClear(this, true)
+        qualityController?.close(); qualityController = null
         OwlSession.playerReady = false
         if (playerInitialized) {
             player.removeObserver(this)

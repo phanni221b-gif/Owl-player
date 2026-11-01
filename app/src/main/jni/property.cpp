@@ -1,5 +1,7 @@
 #include <jni.h>
 #include <stdlib.h>
+#include <stdio.h>
+#include "render_pass_stats.h"
 
 #include <mpv/client.h>
 
@@ -18,6 +20,8 @@ extern "C" {
     jni_func(void, setPropertyBoolean, jstring property, jboolean value);
     jni_func(jstring, getPropertyString, jstring jproperty);
     jni_func(void, setPropertyString, jstring jproperty, jstring jvalue);
+
+    jni_func(jstring, getRenderPassSummary);
 
     jni_func(void, observeProperty, jstring property, jint format);
 }
@@ -122,4 +126,17 @@ jni_func(void, observeProperty, jstring property, jint format) {
     if (result < 0)
         ALOGE("mpv_observe_property(%s) format %d returned error %s", prop, format, mpv_error_string(result));
     env->ReleaseStringUTFChars(property, prop);
+}
+
+// vo-passes explicitly does not support string subkeys; use its documented NODE representation.
+jni_func(jstring, getRenderPassSummary) {
+    CHECK_MPV_INIT();
+    mpv_node root = {};
+    if (mpv_get_property(g_mpv, "vo-passes", MPV_FORMAT_NODE, &root) < 0) return NULL;
+    const auto stats = owl_render_pass_stats(root);
+    mpv_free_node_contents(&root);
+    char buffer[160];
+    snprintf(buffer, sizeof(buffer), "n8=%d,n16=%d,passes=%d,avg_ns=%lld",
+        stats.neural8 ? 1 : 0, stats.neural16 ? 1 : 0, stats.passes, (long long)stats.average_ns);
+    return env->NewStringUTF(buffer);
 }

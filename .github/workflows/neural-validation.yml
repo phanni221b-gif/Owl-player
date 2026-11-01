@@ -1,0 +1,29 @@
+name: Neural GPU validation
+on:
+  push:
+    branches: [main, "feature/**"]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  shader-gles:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Mesa GLES test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mpv ffmpeg xvfb xauth python3-pil
+      - name: Check pinned neural source, weights and licenses
+        run: python3 tools/validate_neural_assets.py
+      - name: Test read-only native render-pass parser with pinned mpv API header
+        run: |
+          mkdir -p /tmp/owl-mpv-headers/mpv
+          curl -fsSL https://raw.githubusercontent.com/mpv-player/mpv/8e5a96fc456c041c7dcfccc19467e439bbeb8aab/libmpv/client.h -o /tmp/owl-mpv-headers/mpv/client.h
+          g++ -std=c++17 -Wall -Wextra -Werror -I/tmp/owl-mpv-headers tools/test_render_pass_stats.cpp -o /tmp/owl-render-pass-test
+          /tmp/owl-render-pass-test
+      - name: Compile and render both CNN models on Mesa OpenGL ES
+        run: xvfb-run -a -s '-screen 0 1280x720x24' python3 tools/smoke_neural_gpu.py
