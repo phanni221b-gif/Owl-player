@@ -8,7 +8,6 @@ import android.os.Environment
 import android.os.storage.StorageManager
 import android.provider.MediaStore
 import java.io.File
-import java.util.ArrayDeque
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,10 +21,6 @@ object MediaLibrary {
     @Volatile
     var cache: List<MediaFolder> = emptyList()
         private set
-
-    private val videoExtensions = setOf(
-        "3gp", "avi", "flv", "m2ts", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "mts", "ts", "webm", "wmv"
-    )
 
     private val scanMutex = Mutex()
     @Volatile var scanning = false
@@ -113,7 +108,7 @@ object MediaLibrary {
 
                         if (path != null) {
                             val ext = File(path).extension.lowercase(Locale.ROOT)
-                            if (ext.isNotEmpty() && ext !in videoExtensions) continue
+                            if (ext.isNotEmpty() && !DirectVideoWalker.isVideo(File(path))) continue
                         }
 
                         val parent = path?.let { File(it).parentFile }
@@ -229,58 +224,18 @@ object MediaLibrary {
         knownPaths: MutableSet<String>,
         grouped: LinkedHashMap<String, MediaFolder>, job: Job, recursive: Boolean, onUpdate: () -> Unit
     ) {
-        val pending = ArrayDeque<File>()
-        val visited = hashSetOf<String>()
-        pending.add(root)
-
         var lastUpdate = android.os.SystemClock.elapsedRealtime()
-        while (pending.isNotEmpty()) {
-            job.ensureActive()
-            val directory = pending.removeLast()
-            val canonical = try {
-                directory.canonicalPath
-            } catch (_: Throwable) {
-                directory.absolutePath
-            }
-            if (!visited.add(canonical)) continue
-
-            val children = try {
-                directory.listFiles()
-            } catch (_: Throwable) {
-                null
-            } ?: continue
-
-            for (child in children) {
-                job.ensureActive()
-                if (child.isDirectory) {
-                    if (shouldSkipDirectDirectory(root, child)) continue
-                    if (recursive) pending.add(child)
-                    continue
-                }
-
-                if (!child.isFile) continue
-                val extension = child.extension.lowercase(Locale.ROOT)
-                if (extension !in videoExtensions) continue
-
-                val absolutePath = child.absolutePath
-                if (absolutePath in knownPaths) continue
-
+        DirectVideoWalker.walk(root, recursive, { job.ensureActive() }) { child ->
+            val absolutePath = child.absolutePath
+            if (absolutePath !in knownPaths) {
                 val parent = child.parentFile ?: root
                 val key = parent.absolutePath
-                val folderName = if (parent.absolutePath == root.absolutePath) {
-                    storageLabel
-                } else {
-                    parent.name.takeIf { it.isNotBlank() } ?: storageLabel
-                }
+                val folderName = if (parent.absolutePath == root.absolutePath) storageLabel
+                    else parent.name.takeIf { it.isNotBlank() } ?: storageLabel
                 MediaRules.add(grouped, key, folderName, storageLabel, MediaVideo(
-                    title = child.name,
-                    path = absolutePath,
-                    uri = Uri.fromFile(child).toString(),
-                    durationMs = 0L,
-                    width = 0,
-                    height = 0,
-                    sizeBytes = try { child.length() } catch (_: Throwable) { 0L },
-                    modifiedSeconds = try { child.lastModified() / 1000L } catch (_: Throwable) { 0L }
+                    title = child.name, path = absolutePath, uri = Uri.fromFile(child).toString(),
+                    durationMs = 0L, width = 0, height = 0,
+                    sizeBytes = child.length(), modifiedSeconds = child.lastModified() / 1000L
                 ), knownPaths)
             }
             if (android.os.SystemClock.elapsedRealtime() - lastUpdate > 500L) {
@@ -288,17 +243,5 @@ object MediaLibrary {
                 lastUpdate = android.os.SystemClock.elapsedRealtime()
             }
         }
-    }
-
-    private fun shouldSkipDirectDirectory(root: File, directory: File): Boolean {
-        val relative = try {
-            directory.relativeTo(root).invariantSeparatorsPath
-        } catch (_: Throwable) {
-            return false
-        }
-        return relative.equals("Android/data", ignoreCase = true) ||
-            relative.startsWith("Android/data/", ignoreCase = true) ||
-            relative.equals("Android/obb", ignoreCase = true) ||
-            relative.startsWith("Android/obb/", ignoreCase = true)
     }
 }

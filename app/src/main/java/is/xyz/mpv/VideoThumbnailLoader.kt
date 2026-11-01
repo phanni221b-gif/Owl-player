@@ -13,11 +13,13 @@ import android.util.LruCache
 import android.util.Size
 import android.widget.ImageView
 import java.lang.ref.WeakReference
-import java.util.concurrent.Executors
+import java.util.concurrent.ThreadPoolExecutor
+import java.util.concurrent.LinkedBlockingQueue
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.Future
 
 object VideoThumbnailLoader {
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = ThreadPoolExecutor(1, 1, 0L, TimeUnit.MILLISECONDS, LinkedBlockingQueue<Runnable>())
     private val main = Handler(Looper.getMainLooper())
     private val cache = object : LruCache<String, Bitmap>(16 * 1024) {
         override fun sizeOf(key: String, value: Bitmap) = (value.allocationByteCount / 1024).coerceAtLeast(1)
@@ -39,6 +41,7 @@ object VideoThumbnailLoader {
         if (request.targets.isEmpty()) {
             request.signal.cancel()
             request.future?.cancel(true)
+            (request.future as? Runnable)?.let { executor.remove(it) }
             if (requests[request.key] === request) requests.remove(request.key)
             loading = requests.size
         }

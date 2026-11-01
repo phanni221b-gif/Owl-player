@@ -29,6 +29,7 @@ jobs:
         run: buildscripts/include/ci.sh export >> $GITHUB_ENV
 
       - uses: actions/cache@v6
+        id: native-cache
         with:
           path: gh-cache/
           key: "${{ env.CACHE_IDENTIFIER }}"
@@ -121,6 +122,13 @@ jobs:
         env:
           CACHE_MODE: folder
           CACHE_FOLDER: "${{ github.workspace }}/gh-cache"
+
+      - name: Preserve verified native dependency cache
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: gh-cache/
+          key: "${{ env.CACHE_IDENTIFIER }}"
 
       - name: Build Owl APKs
         run: buildscripts/include/ci.sh build

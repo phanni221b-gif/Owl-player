@@ -14,6 +14,9 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
 import java.util.Locale
 
 class VideoAdapter(
@@ -28,6 +31,7 @@ class VideoAdapter(
     private val items: List<MediaVideo> get() = currentList
     private var history = emptyMap<String, PlaybackHistory.Entry?>()
     private var generation = 0
+    private var historyJob: Job? = null
     private var thumbnailsPaused = false
     fun pauseThumbnails(recycler: RecyclerView, paused: Boolean) {
         thumbnailsPaused = paused
@@ -42,8 +46,9 @@ class VideoAdapter(
     fun submit(videos: List<MediaVideo>) {
         val version = ++generation
         val snapshot = videos.toList()
-        scope.launch {
-            val entries = withContext(Dispatchers.IO) { snapshot.associate { identity(it) to PlaybackHistory.get(context, it) } }
+        historyJob?.cancel()
+        historyJob = scope.launch {
+            val entries = withContext(Dispatchers.IO) { snapshot.associate { currentCoroutineContext().ensureActive(); identity(it) to PlaybackHistory.get(context, it) } }
             if (version != generation) return@launch
             history = entries
             selectedUris.retainAll(snapshot.map { identity(it) }.toSet())
