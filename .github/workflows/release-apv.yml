@@ -52,13 +52,12 @@ jobs:
           sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip gperf nasm
           sudo pip3 install meson pillow --break-system-packages
 
-      - name: Verify protected playback core baseline
+      - name: Verify protected playback core baseline and pan contract
         run: |
           cat > /tmp/owl-protected-core.sha256 <<'EOF'
           bcc2e35e50e15597e0106b4851357907328e3bf331b41c1fd58bb75906bfaa97  app/src/main/java/is/xyz/mpv/MPVLib.kt
           90334a608653afcb780ac967c9905d2aad2c15a537cb429560bd3739e8df1ace  app/src/main/java/is/xyz/mpv/BaseMPVView.kt
           90aa82b975e261bef4466df634219eb8e19cc65d0417a7803e57db016f0aec97  app/src/main/java/is/xyz/mpv/MPVView.kt
-          edfc186d027b7e0d0661b13a09d7fc7c4811555987329e8b4c4ffcde45947203  app/src/main/java/is/xyz/mpv/TouchGestures.kt
           6baf03bfa52ee9ed4542a74f7e51a526009565a220cc767bb03533bc2c473c98  app/src/main/jni/Android.mk
           32f7151a08f806dcf9ef96497ddec824105cd1baa7ef068e9a2899fae8d683de  app/src/main/jni/Application.mk
           b5903f338635e461978ca36671d015c89b7f0a04465824bbb786e1f7c7e2c6bb  app/src/main/jni/event.cpp
@@ -79,6 +78,13 @@ jobs:
           33fd2e40e11c45dc3ebd92f6b1bca51aba79339e31abdfc4545cab280fd5e95c  buildscripts/scripts/mpv-android.sh
           EOF
           sha256sum -c /tmp/owl-protected-core.sha256
+          GESTURE=app/src/main/java/is/xyz/mpv/TouchGestures.kt
+          grep -q 'private const val PAN_SENSITIVITY = 0.55' "$GESTURE"
+          grep -q 'private const val PAN_JITTER_DEADZONE_FRACTION = 0.0035f' "$GESTURE"
+          grep -q 'private const val PINCH_SCALE_DEADZONE = 0.003' "$GESTURE"
+          grep -q 'MPVLib.setPropertyDouble("video-align-x", alignX)' "$GESTURE"
+          grep -q 'MPVLib.setPropertyDouble("video-align-y", alignY)' "$GESTURE"
+          ! grep -q 'PAN_SMOOTHING_KEEP' "$GESTURE"
 
       - name: Restore private Owl release key
         env:

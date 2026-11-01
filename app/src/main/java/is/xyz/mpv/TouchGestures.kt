@@ -68,8 +68,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private var alignY = 0.0
     private var panResidualX = 0f
     private var panResidualY = 0f
-    private var filteredPanX = 0f
-    private var filteredPanY = 0f
 
     private inline fun checkFloat(vararg n: Float): Boolean {
         return !n.any { it.isInfinite() || it.isNaN() }
@@ -97,10 +95,9 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         private const val MAX_VIDEO_ZOOM = 3.0 // 8x
         private const val MIN_VIDEO_ZOOM = 0.0 // fitted size
 
-        // Deliberately calmer than direct finger tracking.
-        private const val PAN_SENSITIVITY = 0.45
+        // Restore the pre-smoothing bounded-pan response while retaining edge bounds.
+        private const val PAN_SENSITIVITY = 0.55
         private const val PAN_JITTER_DEADZONE_FRACTION = 0.0035f
-        private const val PAN_SMOOTHING_KEEP = 0.60f
 
         // Tiny changes in the distance between two resting fingers should not cause zoom wobble.
         private const val PINCH_SCALE_DEADZONE = 0.003
@@ -214,8 +211,6 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private fun clearPanFilter() {
         panResidualX = 0f
         panResidualY = 0f
-        filteredPanX = 0f
-        filteredPanY = 0f
     }
 
     private fun resetBoundedPan() {
@@ -270,18 +265,12 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             panResidualX += rawDx
             panResidualY += rawDy
 
-            // Ignore the center-point wobble made by two resting fingertips until it is
-            // large enough to be intentional. Once accepted, run it through a light
-            // low-pass filter to remove the remaining small frame-to-frame shake.
+            // Ignore resting-finger wobble, then apply the accepted drag directly.
+            // This keeps the bounded pan stable without the previous low-pass lag.
             val jitterDeadzone = max(2.5f, min(width, height) * PAN_JITTER_DEADZONE_FRACTION)
             if (hypot(panResidualX, panResidualY) >= jitterDeadzone) {
-                filteredPanX = filteredPanX * PAN_SMOOTHING_KEEP +
-                    panResidualX * (1f - PAN_SMOOTHING_KEEP)
-                filteredPanY = filteredPanY * PAN_SMOOTHING_KEEP +
-                    panResidualY * (1f - PAN_SMOOTHING_KEEP)
-
-                val dx = if (width > 0f) filteredPanX / width else 0f
-                val dy = if (height > 0f) filteredPanY / height else 0f
+                val dx = if (width > 0f) panResidualX / width else 0f
+                val dy = if (height > 0f) panResidualY / height else 0f
 
                 // video-align is the inverse of direct manipulation: dragging the picture
                 // right/down means showing more of its left/top side.
