@@ -26,6 +26,20 @@ class SessionCleanupTest {
         assertFalse(cleanup.closed)
     }
 
+    @Test fun delayedOldServiceCallbackCannotCloseFreshSession() {
+        val cleanup = SessionCleanup()
+        val old = cleanup.generation
+        cleanup.close({}, {}, old)
+        cleanup.restart()
+        var stopped = false
+        cleanup.register("new activity") { stopped = true }
+        assertFalse(cleanup.close({}, {}, old))
+        assertFalse(stopped)
+        assertFalse(cleanup.closed)
+        assertTrue(cleanup.close({}, {}, cleanup.generation))
+        assertTrue(stopped)
+    }
+
     @Test fun destroyedOwnerIsNotRetainedOrCleanedTwice() {
         val cleanup = SessionCleanup()
         var calls = 0

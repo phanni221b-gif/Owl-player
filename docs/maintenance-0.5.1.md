@@ -18,7 +18,7 @@ Baseline: v0.5.0 / main 4023b89. No protected playback-core/native-option change
 
 ## Task removal and fresh launch
 
-OwlTaskService observes removal while a browser/player session is active; BackgroundPlaybackService also handles onTaskRemoved. stopWithTask is false so Android delivers that callback rather than silently stopping the service first. Both services are non-sticky. Home/onStop is not a session-exit event.
+OwlTaskService observes removal while a browser/player session is active; BackgroundPlaybackService also handles onTaskRemoved. stopWithTask is false so Android delivers that callback rather than silently stopping the service first. Both services are non-sticky. Service removal callbacks carry their session generation so a delayed old callback cannot close a newly launched session. Home/onStop is not a session-exit event.
 
 The idempotent runtime coordinator cancels scans, thumbnail subscribers/queued work, file jobs and playlist preparation; stops diagnostics and clears runtime samples; stops playback through the Activity shell; detaches playback-service observers and delayed thumbnail callbacks before native destruction; releases the media session; removes foreground status/notification and stops services. Late notification/media-session callbacks are guarded. Activity onDestroy owns native destruction exactly once.
 

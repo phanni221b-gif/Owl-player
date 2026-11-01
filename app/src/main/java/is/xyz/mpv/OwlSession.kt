@@ -14,6 +14,7 @@ internal object OwlSession {
     private val cleanup = SessionCleanup()
     private val activities = linkedSetOf<Activity>()
     val ending: Boolean get() = cleanup.closed
+    val generation: Long get() = cleanup.generation
     @Volatile var playerReady = false
 
     fun prepareLauncher(activity: Activity, fresh: Boolean) {
@@ -48,7 +49,7 @@ internal object OwlSession {
         VideoThumbnailLoader.cancelAll(clearCache = false)
     }
 
-    fun exit(context: Context) {
+    fun exit(context: Context, expectedGeneration: Long? = null) {
         cleanup.close(before = {
             MediaLibrary.resetSession()
             VideoThumbnailLoader.cancelAll(clearCache = true)
@@ -59,6 +60,6 @@ internal object OwlSession {
             BackgroundPlaybackService.stopAndClear(context, true)
             OwlLaunchState.clear()
             context.stopService(Intent(context, OwlTaskService::class.java))
-        })
+        }, expectedGeneration = expectedGeneration)
     }
 }

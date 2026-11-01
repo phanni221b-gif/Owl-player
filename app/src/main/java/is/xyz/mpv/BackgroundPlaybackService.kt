@@ -28,6 +28,7 @@ import `is`.xyz.mpv.MPVLib.MpvEvent
 */
 
 class BackgroundPlaybackService : Service(), MPVLib.EventObserver {
+    private val sessionGeneration = OwlSession.generation
     @Volatile private var closed = false
     private var observerAttached = false
 
@@ -160,7 +161,7 @@ class BackgroundPlaybackService : Service(), MPVLib.EventObserver {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        OwlSession.exit(applicationContext)
+        OwlSession.exit(applicationContext, sessionGeneration)
         closeResources()
         stopSelf()
         super.onTaskRemoved(rootIntent)
