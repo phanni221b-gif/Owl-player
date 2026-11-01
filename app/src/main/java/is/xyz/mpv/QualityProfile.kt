@@ -82,7 +82,7 @@ internal object QualityOptions {
             "sigmoid-upscaling" to if (high) "yes" else "no",
             "hdr-compute-peak" to if (high) "auto" else "no",
             "allow-delayed-peak-detect" to if (high) "no" else "yes",
-            "tone-mapping" to "auto", "fbo-format" to "auto",
+            "tone-mapping" to "auto",
             "scale-antiring" to if (high) "0.6" else "0.0"
         )
     }

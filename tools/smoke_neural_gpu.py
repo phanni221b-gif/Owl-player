@@ -48,7 +48,7 @@ mp.register_event('file-loaded', function() mp.get_property_native('vo-passes');
 '''.replace('MARKER',json.dumps(marker)).replace('RESULT',json.dumps(str(result))))
         cmd = ['mpv','--no-config','--vo=gpu-next','--gpu-api=opengl','--gpu-context=x11egl','--opengl-es=yes',
             '--gpu-sw=yes','--term-status-msg=','--osc=no','--osd-level=0','--osd-bar=no','--hwdec=no','--no-audio','--loop-file=inf','--geometry=960x540+0+0','--border=no','--scale=ewa_lanczossharp',
-            '--dscale=mitchell','--fbo-format=rgba16f','--script='+str(lua),'--log-file='+str(work/f'{channels}.log')]
+            '--dscale=mitchell','--script='+str(lua),'--log-file='+str(work/f'{channels}.log')]
         if channels:
             shader = ASSETS/f'Owl-FSRCNNX-{model_channels}.glsl'
             if channels == -1:
