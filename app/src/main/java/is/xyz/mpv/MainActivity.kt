@@ -120,13 +120,11 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
 
     override fun onResume() {
         super.onResume()
-        val previousRoots = storageRoots
+        selectedStoragePath = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
+            .getString(StorageBrowserActivity.KEY_STORAGE_ROOT, null)
+        val hadSavedSelection = selectedStoragePath != null
         storageRoots = StorageBrowser.roots(this)
-        if (selectedStoragePath != null && previousRoots.isNotEmpty()) {
-            validateSelectedStorage(fallbackToPrimary = true)
-        } else {
-            validateSelectedStorage(fallbackToPrimary = false)
-        }
+        validateSelectedStorage(fallbackToPrimary = hadSavedSelection)
         updateStorageButton()
         if (waitingForAllFiles && hasAllFilesAccess()) {
             waitingForAllFiles = false
