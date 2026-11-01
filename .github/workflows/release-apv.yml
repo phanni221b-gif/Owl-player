@@ -156,6 +156,7 @@ jobs:
           cp buildscripts/include/native-revisions.sh native-revisions.txt
           printf 'commit=%s\nvariant=allstorageRelease\napplicationId=com.phanni221b.owlplayer\n' "$GITHUB_SHA" > build-info.txt
           cat native-revisions.txt signing.txt >> build-info.txt
+          bash -c '. buildscripts/include/depinfo.sh; set | grep -E "^(v_|rev_)"' >> build-info.txt
 
       - uses: actions/upload-artifact@v4
         with:
