@@ -137,7 +137,9 @@ jobs:
       - name: Create disposable CI debug key for internal test variants
         run: |
           mkdir -p "$HOME/.android"
-          keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 2 -dname "CN=CI Debug"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 2 -dname "CN=CI Debug"
+          fi
 
       - name: Build Owl APKs
         run: buildscripts/include/ci.sh build

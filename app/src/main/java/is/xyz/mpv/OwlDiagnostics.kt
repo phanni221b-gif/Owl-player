@@ -31,10 +31,10 @@ object OwlDiagnostics {
         val handler = Handler(Looper.getMainLooper())
         var tracker: JankStats? = null
         var active = false
-        var scrolling = false
+        val scrolling = java.util.concurrent.atomic.AtomicBoolean(false)
         val screen = activity.javaClass.simpleName
         val scrollListener = object : RecyclerView.OnScrollListener() {
-            override fun onScrollStateChanged(view: RecyclerView, state: Int) { scrolling = state != RecyclerView.SCROLL_STATE_IDLE }
+            override fun onScrollStateChanged(view: RecyclerView, state: Int) { scrolling.set(state != RecyclerView.SCROLL_STATE_IDLE) }
         }
         val poll = object : Runnable {
             override fun run() {
@@ -66,7 +66,7 @@ object OwlDiagnostics {
                 recycler?.addOnScrollListener(scrollListener)
                 tracker = JankStats.createAndTrack(activity.window) { data ->
                     val state = listOfNotNull(
-                        if (scrolling) "scrolling" else null,
+                        if (scrolling.get()) "scrolling" else null,
                         if (MediaLibrary.scanning) "media scan" else null,
                         if (VideoThumbnailLoader.loading > 0) "thumbnail loading" else null
                     ).joinToString(" + ").ifEmpty { "idle" }
