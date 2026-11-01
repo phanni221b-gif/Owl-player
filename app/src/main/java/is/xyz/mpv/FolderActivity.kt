@@ -97,6 +97,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
         swipeRefresh = findViewById(R.id.folderSwipeRefresh)
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = adapter
+        OwlDiagnostics.attach(this, this, recycler)
         swipeRefresh.setOnRefreshListener { rescanFolder(showLoadingText = false) }
 
         onBackPressedDispatcher.addCallback(this) {
@@ -144,6 +145,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     }
 
     override fun onStop() {
+        adapter.pauseThumbnails(recycler, true)
         scanInterrupted = scanJob?.isActive == true
         scanJob?.cancel()
         launchJob?.cancel()
@@ -152,6 +154,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
 
     override fun onStart() {
         super.onStart()
+        adapter.pauseThumbnails(recycler, false)
         if (scanInterrupted) { scanInterrupted = false; rescanFolder(false) }
     }
 
