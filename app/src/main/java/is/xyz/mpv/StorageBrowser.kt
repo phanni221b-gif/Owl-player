@@ -75,7 +75,7 @@ internal object StorageBrowser {
     fun filterFolders(folders: List<MediaFolder>, rootPath: String?): List<MediaFolder> {
         if (rootPath.isNullOrBlank()) return folders
         return folders.filter { folder ->
-            val path = folder.key.takeIf { it.startsWith(File.separator) }
+            val path = folder.key.takeIf { it.startsWith("/") || File(it).isAbsolute }
                 ?: folder.videos.firstNotNullOfOrNull { it.path }?.let { File(it).parent }
             path != null && containsPath(rootPath, path)
         }
@@ -172,9 +172,9 @@ internal object StorageBrowser {
         }
 
     internal fun containsPath(rootPath: String, candidatePath: String): Boolean {
-        val root = rootPath.trimEnd(File.separatorChar)
-        val candidate = candidatePath.trimEnd(File.separatorChar)
-        return candidate == root || candidate.startsWith(root + File.separator)
+        val root = rootPath.replace(File.separatorChar, '/').trimEnd('/')
+        val candidate = candidatePath.replace(File.separatorChar, '/').trimEnd('/')
+        return candidate == root || candidate.startsWith(root + "/")
     }
 
     private fun videoEntry(file: File, root: StorageRoot, subtitle: String): BrowserEntry {

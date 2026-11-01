@@ -40,10 +40,10 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private lateinit var browseControls: View
     private lateinit var storageButton: Button
     private val adapter = FolderAdapter(::openFolder, ::onFolderSelectionChanged)
-    private var scanJob: Job? = null
+    private lateinit var scans: LifecycleScanController<MediaFolder>
     private var fileJob: Job? = null
-    private var scanInterrupted = false
-    private var pendingForce = false
+    private var rootsJob: Job? = null
+    private val rootsWorker = ProviderQueryRunner(1, "OwlMainStorageRoots")
     private var waitingForAllFiles = false
     private var currentFolders: List<MediaFolder> = emptyList()
     private var storageRoots: List<StorageRoot> = emptyList()
@@ -74,7 +74,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         OwlSession.prepareLauncher(this, savedInstanceState == null && isTaskRoot && intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER))
-        OwlSession.attach(this) { scanJob?.cancel(); fileJob?.cancel(); scanInterrupted = false }
+        OwlSession.attach(this) { if (::scans.isInitialized) scans.close(); fileJob?.cancel(); rootsJob?.cancel() }
 
         SystemBarInsets.apply(findViewById(R.id.mainRoot))
         ApvSettingsActivity.ensureDefaults(this)
@@ -82,8 +82,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         val prefs = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
         sortMode = prefs.getInt(KEY_SORT, SORT_NAME)
         selectedStoragePath = prefs.getString(StorageBrowserActivity.KEY_STORAGE_ROOT, null)
-        storageRoots = StorageBrowser.roots(this)
-        validateSelectedStorage(fallbackToPrimary = false)
+        storageRoots = listOf(StorageRoot("내부 저장소", Environment.getExternalStorageDirectory().absolutePath, true))
 
         recycler = findViewById(R.id.folderRecycler)
         emptyText = findViewById(R.id.emptyText)
@@ -95,7 +94,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         OwlDiagnostics.attach(this, this, recycler)
         recycler.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateGridSpan() }
         recycler.post { updateGridSpan() }
-        swipeRefresh.setOnRefreshListener { loadFolders(showLoadingText = false, force = true) }
+        swipeRefresh.setOnRefreshListener { loadFolders(force = true) }
 
         findViewById<ImageButton>(R.id.searchButton).setOnClickListener { showSearch() }
         findViewById<ImageButton>(R.id.sortButton).setOnClickListener { showSortMenu() }
@@ -115,6 +114,11 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             if (adapter.isSelectionMode()) adapter.clearSelection() else finish()
         }
 
+        scans = LifecycleScanController(this, lifecycleScope, "main",
+            allowed = { !OwlSession.ending && !isFinishing && !isDestroyed },
+            scan = { force, emit -> MediaLibrary.scan(applicationContext, force, emit) },
+            data = ::displayFolders, stateChanged = ::renderScanState)
+        StorageChangeObserver(this, lifecycleScope) { refreshStorageRoots(true); loadFolders(force = true) }
         ensureAccess()
     }
 
@@ -123,16 +127,31 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         selectedStoragePath = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
             .getString(StorageBrowserActivity.KEY_STORAGE_ROOT, null)
         val hadSavedSelection = selectedStoragePath != null
-        storageRoots = StorageBrowser.roots(this)
-        validateSelectedStorage(fallbackToPrimary = hadSavedSelection)
+        refreshStorageRoots(hadSavedSelection)
         updateStorageButton()
         if (waitingForAllFiles && hasAllFilesAccess()) {
             waitingForAllFiles = false
             ensureAccess()
         }
         recycler.post { updateGridSpan() }
-        if (scanJob?.isCompleted == true) displayFolders(MediaLibrary.cache)
+        if (scans.completed) displayFolders(MediaLibrary.cache)
         else if (currentFolders.isNotEmpty()) applySort()
+    }
+
+    private fun refreshStorageRoots(fallbackToPrimary: Boolean) {
+        if (rootsJob?.isActive == true) return
+        val app = applicationContext
+        rootsJob = lifecycleScope.launch {
+            val roots = try {
+                kotlinx.coroutines.withTimeoutOrNull(8_000) { rootsWorker.query({}) { StorageBrowser.roots(app) } }
+            } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+            catch (_: Exception) { null }
+            if (OwlSession.ending) return@launch
+            if (roots != null) storageRoots = roots
+            validateSelectedStorage(fallbackToPrimary)
+            updateStorageButton()
+            if (currentFolders.isNotEmpty()) applySort()
+        }
     }
 
     private fun validateSelectedStorage(fallbackToPrimary: Boolean) {
@@ -222,48 +241,25 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private fun hasAllFilesAccess(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
 
-    private fun loadFolders(showLoadingText: Boolean = true, force: Boolean = false) {
-        if (OwlSession.ending || isFinishing || isDestroyed) return
-        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
-            scanInterrupted = true
-            pendingForce = pendingForce || force
-            return
+    private fun loadFolders(force: Boolean = false) = scans.request(force)
+
+    private fun renderScanState(phase: LifecycleScanState.Phase) {
+        swipeRefresh.isRefreshing = phase == LifecycleScanState.Phase.LOADING
+        if (scopedFolders().isNotEmpty()) return
+        val message = when (phase) {
+            LifecycleScanState.Phase.PENDING -> "검색을 시작할 준비 중…"
+            LifecycleScanState.Phase.LOADING -> "영상 폴더를 찾는 중…"
+            LifecycleScanState.Phase.ERROR -> "검색하지 못했습니다. 아래로 당겨 다시 검색해주세요."
+            LifecycleScanState.Phase.CANCELLED -> "검색이 중단되었습니다. 아래로 당겨 다시 검색해주세요."
+            else -> return
         }
-        if (showLoadingText && currentFolders.isEmpty()) {
-            emptyText.text = "영상 폴더를 찾는 중…"
-            emptyText.visibility = View.VISIBLE
-        }
-        scanJob?.cancel()
-        scanJob = lifecycleScope.launch {
-            try {
-                val owner = coroutineContext[Job]!!
-                val folders = MediaLibrary.scan(applicationContext, force) { partial ->
-                    runOnUiThread { if (owner.isActive && !OwlSession.ending) displayFolders(partial) }
-                }
-                displayFolders(folders)
-            } finally { if (coroutineContext[Job] === scanJob) swipeRefresh.isRefreshing = false }
-        }
+        emptyText.text = message
+        emptyText.visibility = View.VISIBLE
     }
 
     private fun displayFolders(folders: List<MediaFolder>) {
         currentFolders = folders
         applySort()
-    }
-
-    override fun onStop() {
-        scanInterrupted = scanInterrupted || scanJob?.isActive == true
-        scanJob?.cancel()
-        super.onStop()
-    }
-
-    override fun onStart() {
-        super.onStart()
-        if (scanInterrupted) {
-            scanInterrupted = false
-            val force = pendingForce
-            pendingForce = false
-            loadFolders(false, force)
-        }
     }
 
     private fun scopedFolders(): List<MediaFolder> =

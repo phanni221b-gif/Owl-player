@@ -175,7 +175,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_gravity="center"
-                android:text="영상 폴더를 찾는 중…"
+                android:text="저장소 접근 권한을 확인해주세요."
                 android:textColor="?android:attr/textColorSecondary"
                 android:textSize="16sp" />
         </FrameLayout>
