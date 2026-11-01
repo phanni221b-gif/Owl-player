@@ -23,4 +23,10 @@ int main() {
     first_values[0] = string_node("Owl FSRCNNX 16 RGB reconstruction");
     first_values[1] = int_node(LLONG_MAX);
     result = owl_render_pass_stats(root); assert(result.neural16 && !result.neural8 && result.average_ns == LLONG_MAX);
+    mpv_node_list empty_fresh = {0, nullptr, nullptr};
+    mpv_node both_values[] = {list_node(MPV_FORMAT_NODE_ARRAY, &empty_fresh), list_node(MPV_FORMAT_NODE_ARRAY, &fresh)};
+    char *both_keys[] = {const_cast<char *>("fresh"), const_cast<char *>("redraw")};
+    mpv_node_list both_list = {2, both_values, both_keys};
+    result = owl_render_pass_stats(list_node(MPV_FORMAT_NODE_MAP, &both_list));
+    assert(result.neural16 && result.passes == 2 && result.average_ns == LLONG_MAX);
 }

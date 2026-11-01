@@ -43,6 +43,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private lateinit var scans: LifecycleScanController<MediaFolder>
     private var fileJob: Job? = null
     private var rootsJob: Job? = null
+    private var foregroundEntries = 0
     private val rootsWorker = ProviderQueryRunner(1, "OwlMainStorageRoots")
     private var waitingForAllFiles = false
     private var currentFolders: List<MediaFolder> = emptyList()
@@ -124,6 +125,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
 
     override fun onResume() {
         super.onResume()
+        foregroundEntries++
         selectedStoragePath = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
             .getString(StorageBrowserActivity.KEY_STORAGE_ROOT, null)
         val hadSavedSelection = selectedStoragePath != null
@@ -147,7 +149,12 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
             catch (_: Exception) { null }
             if (OwlSession.ending || !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return@launch
-            if (roots != null) storageRoots = roots
+            if (roots != null) {
+                val changed = roots.map { it.path }.toSet() != storageRoots.map { it.path }.toSet()
+                storageRoots = roots
+                // A mount while backgrounded has no foreground broadcast; rescan only on an inventory change.
+                if (changed && foregroundEntries > 1 && scans.completed) loadFolders(force = true)
+            }
             validateSelectedStorage(fallbackToPrimary)
             updateStorageButton()
             if (currentFolders.isNotEmpty()) applySort()

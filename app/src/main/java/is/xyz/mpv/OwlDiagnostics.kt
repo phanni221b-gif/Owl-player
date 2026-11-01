@@ -68,7 +68,7 @@ object OwlDiagnostics {
                         listOf("estimated-vf-fps", "frame-drop-count", "decoder-frame-drop-count", "avsync",
                             "total-avsync-change", "vo-delayed-frame-count", "demuxer-cache-duration")
                             .joinToString(", ") { it + "=" + number(it) } +
-                        ", hwdec-current=" + text("hwdec-current") + ", paused-for-cache=" + flag("paused-for-cache") +
+                        ", current-vo=" + text("current-vo") + ", hwdec-current=" + text("hwdec-current") + ", paused-for-cache=" + flag("paused-for-cache") +
                         ", renderer-pass-summary=" + runCatching { MPVLib.getRenderPassSummary() }.getOrNull()
                     synchronized(this@OwlDiagnostics) {
                         if (samples.size >= 300) samples.removeFirst()

@@ -181,7 +181,7 @@ internal class QualityPlaybackController(context: Context, private val selectRen
         if (closed || level > MPVLib.MpvLogLevel.MPV_LOG_LEVEL_WARN) return
         val lower = text.lowercase()
         val shaderError = (prefix.contains("gpu") || prefix.contains("libplacebo")) &&
-            listOf("shader", "glsl", "framebuffer", "render pass").any { lower.contains(it) } &&
+            listOf("shader", "glsl", "framebuffer", "render pass", "failed rendering", "failed dispatch", "gl_invalid_operation").any { lower.contains(it) } &&
             (level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_ERROR || lower.contains("failed") || lower.contains("error"))
         if (!shaderError) return
         val token = generation; val attempt = attemptNumber
