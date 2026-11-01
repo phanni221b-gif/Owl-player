@@ -13,6 +13,12 @@ class ApvSettingsActivity : AppCompatActivity(R.layout.activity_apv_settings) {
         super.onCreate(savedInstanceState)
         SystemBarInsets.apply(findViewById(R.id.settingsRoot))
 
+        findViewById<CheckBox>(R.id.diagnosticsEnabled).apply {
+            isChecked = OwlDiagnostics.enabled(this@ApvSettingsActivity)
+            setOnCheckedChangeListener { _, checked -> OwlDiagnostics.setEnabled(this@ApvSettingsActivity, checked) }
+        }
+        findViewById<android.view.View>(R.id.diagnosticsReport).setOnClickListener { OwlDiagnostics.showReport(this) }
+
         val prefs = PreferenceManager.getDefaultSharedPreferences(this)
 
         findViewById<ImageButton>(R.id.settingsBackButton).setOnClickListener { finish() }
@@ -88,7 +94,13 @@ class ApvSettingsActivity : AppCompatActivity(R.layout.activity_apv_settings) {
 
         fun ensureDefaults(context: Context) {
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-            if (!prefs.contains(KEY_MODE)) applyMode(context, MODE_BALANCED)
+            val balanced = mapOf<String, Any>(KEY_MODE to MODE_BALANCED, "video_scale" to "bicubic",
+                "video_downscale" to "bilinear", "video_debanding" to "", "gpu_next" to false,
+                "video_fastdecode" to false)
+            val defaults = MediaRules.missingDefaults(prefs.all, balanced)
+            prefs.edit().also { editor -> defaults.forEach { (key, value) ->
+                when (value) { is Boolean -> editor.putBoolean(key, value); is String -> editor.putString(key, value) }
+            } }.apply()
 
             val edit = prefs.edit()
             if (!prefs.contains(KEY_DECODER_MODE)) edit.putString(KEY_DECODER_MODE, DECODER_AUTO)

@@ -38,6 +38,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private val adapter = FolderAdapter(::openFolder, ::onFolderSelectionChanged)
     private var scanJob: Job? = null
     private var scanInterrupted = false
+    private var pendingForce = false
     private var waitingForAllFiles = false
     private var currentFolders: List<MediaFolder> = emptyList()
     private var sortMode = SORT_NAME
@@ -75,6 +76,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         swipeRefresh = findViewById(R.id.mainSwipeRefresh)
         recycler.layoutManager = GridLayoutManager(this, 3)
         recycler.adapter = adapter
+        OwlDiagnostics.attach(this, this, recycler)
         recycler.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateGridSpan() }
         recycler.post { updateGridSpan() }
         swipeRefresh.setOnRefreshListener { loadFolders(showLoadingText = false, force = true) }
@@ -104,6 +106,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             ensureAccess()
         }
         recycler.post { updateGridSpan() }
+        if (scanJob?.isCompleted == true) displayFolders(MediaLibrary.cache)
     }
 
     private fun onFolderSelectionChanged(count: Int) {
@@ -167,6 +170,11 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
 
     private fun loadFolders(showLoadingText: Boolean = true, force: Boolean = false) {
+        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+            scanInterrupted = true
+            pendingForce = pendingForce || force
+            return
+        }
         if (showLoadingText) {
             emptyText.text = "영상 폴더를 찾는 중…"
             emptyText.visibility = View.VISIBLE
@@ -179,7 +187,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
                     runOnUiThread { if (owner.isActive) displayFolders(partial) }
                 }
                 displayFolders(folders)
-            } finally { swipeRefresh.isRefreshing = false }
+            } finally { if (coroutineContext[Job] === scanJob) swipeRefresh.isRefreshing = false }
         }
     }
 
@@ -191,14 +199,19 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     }
 
     override fun onStop() {
-        scanInterrupted = scanJob?.isActive == true
+        scanInterrupted = scanInterrupted || scanJob?.isActive == true
         scanJob?.cancel()
         super.onStop()
     }
 
     override fun onStart() {
         super.onStart()
-        if (scanInterrupted) { scanInterrupted = false; loadFolders(false) }
+        if (scanInterrupted) {
+            scanInterrupted = false
+            val force = pendingForce
+            pendingForce = false
+            loadFolders(false, force)
+        }
     }
 
     private fun applySort() {
@@ -279,7 +292,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             runOnUiThread {
                 adapter.clearSelection()
                 showOperationResult("삭제", result)
-                loadFolders()
+                loadFolders(force = true)
             }
         }
     }
@@ -306,7 +319,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             runOnUiThread {
                 adapter.clearSelection()
                 showOperationResult("이동", result)
-                loadFolders()
+                loadFolders(force = true)
             }
         }
     }

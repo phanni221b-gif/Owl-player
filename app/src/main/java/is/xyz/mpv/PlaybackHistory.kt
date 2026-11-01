@@ -18,8 +18,7 @@ object PlaybackHistory {
         val id = idFor(video)
         val position = prefs.getLong("p_$id", 0L)
         val duration = prefs.getLong("d_$id", video.durationMs)
-        if (position < MIN_RESUME_MS) return null
-        if (duration > 0L && duration - position <= END_MARGIN_MS) return null
+        if (MediaRules.resumeState(position, duration) == null) return null
         return Entry(position, duration)
     }
 
@@ -43,8 +42,6 @@ object PlaybackHistory {
     }
 
     private fun idFor(video: MediaVideo): String {
-        val source = video.path?.takeIf { it.isNotBlank() } ?: video.uri
-        val digest = MessageDigest.getInstance("SHA-256").digest(source.toByteArray(Charsets.UTF_8))
-        return digest.take(12).joinToString("") { "%02x".format(it) }
+        return MediaRules.historyKey(MediaRules.identity(video))
     }
 }

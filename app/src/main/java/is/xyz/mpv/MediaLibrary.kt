@@ -18,27 +18,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-data class MediaVideo(
-    val title: String,
-    val path: String?,
-    val uri: String,
-    val durationMs: Long,
-    val width: Int,
-    val height: Int,
-    val sizeBytes: Long = 0L,
-    val modifiedSeconds: Long = 0L
-)
-
-data class MediaFolder(
-    val key: String,
-    val name: String,
-    val videos: MutableList<MediaVideo> = mutableListOf(),
-    val storageLabel: String = ""
-) {
-    val newestModifiedSeconds: Long
-        get() = videos.maxOfOrNull { it.modifiedSeconds } ?: 0L
-}
-
 object MediaLibrary {
     @Volatile
     var cache: List<MediaFolder> = emptyList()
@@ -71,13 +50,12 @@ object MediaLibrary {
         }
     }
 
-    private fun snapshot(grouped: Map<String, MediaFolder>): List<MediaFolder> = grouped.values
-        .map { it.copy(videos = it.videos.sortedBy { v -> v.title.lowercase(Locale.getDefault()) }.toMutableList()) }
-        .sortedBy { it.name.lowercase(Locale.getDefault()) }
+    private fun snapshot(grouped: Map<String, MediaFolder>) = MediaRules.snapshot(grouped)
 
     private fun scanBlocking(context: Context, job: Job, force: Boolean, folderKey: String?,
         onUpdate: (List<MediaFolder>) -> Unit): List<MediaFolder> {
         val grouped = linkedMapOf<String, MediaFolder>()
+        val indexedPaths = hashSetOf<String>()
         val resolver = context.contentResolver
 
         val volumes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
@@ -114,8 +92,8 @@ object MediaLibrary {
 
             try {
                 resolver.query(collection, projection,
-                    folderKey?.let { if (it.startsWith("/")) "${MediaStore.Video.Media.DATA} GLOB ?" else "${MediaStore.Video.Media.RELATIVE_PATH} = ?" },
-                    folderKey?.let { arrayOf(if (it.startsWith("/")) it + "/\u002a" else it.substringAfter(':')) }, null)?.use { cursor ->
+                    folderKey?.let { if (it.startsWith("/")) "${MediaStore.Video.Media.DATA} LIKE ? ESCAPE '\\'" else "${MediaStore.Video.Media.RELATIVE_PATH} = ?" },
+                    folderKey?.let { arrayOf(if (it.startsWith("/")) it.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "/%" else it.substringAfter(':')) }, null)?.use { cursor ->
                     val idCol = cursor.getColumnIndex(MediaStore.Video.Media._ID)
                     val nameCol = cursor.getColumnIndex(MediaStore.Video.Media.DISPLAY_NAME)
                     val dataCol = cursor.getColumnIndex(MediaStore.Video.Media.DATA)
@@ -145,10 +123,7 @@ object MediaLibrary {
                             ?: relative?.trim('/')?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
                             ?: "Videos"
 
-                        val folder = grouped.getOrPut(key) {
-                            MediaFolder(key = key, name = folderName, storageLabel = storageLabel)
-                        }
-                        folder.videos += MediaVideo(
+                        MediaRules.add(grouped, key, folderName, storageLabel, MediaVideo(
                             title = title,
                             path = path,
                             uri = ContentUris.withAppendedId(collection, id).toString(),
@@ -157,7 +132,7 @@ object MediaLibrary {
                             height = if (heightCol >= 0) cursor.getInt(heightCol) else 0,
                             sizeBytes = if (sizeCol >= 0) cursor.getLong(sizeCol) else 0L,
                             modifiedSeconds = if (modifiedCol >= 0) cursor.getLong(modifiedCol) else 0L
-                        )
+                        ), indexedPaths)
                     }
                 }
             } catch (_: SecurityException) {
@@ -173,10 +148,8 @@ object MediaLibrary {
             onUpdate(cache)
         }
 
-        // MediaStore on some Samsung/USB combinations can omit removable media completely.
-        // In that case, the all-storage build performs one direct read-only discovery pass over
-        // the missing mounted volume. If MediaStore already indexed that volume, do not crawl it
-        // again; this keeps startup fast even with very large SSDs.
+        // Reconcile all removable volumes, including partially indexed ones.
+        // Publish MediaStore first; traversal is cancellable and emits immutable snapshots.
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
             BuildConfig.FLAVOR == "allstorage" &&
             Environment.isExternalStorageManager()
@@ -290,7 +263,7 @@ object MediaLibrary {
                 if (extension !in videoExtensions) continue
 
                 val absolutePath = child.absolutePath
-                if (!knownPaths.add(absolutePath)) continue
+                if (absolutePath in knownPaths) continue
 
                 val parent = child.parentFile ?: root
                 val key = parent.absolutePath
@@ -299,14 +272,7 @@ object MediaLibrary {
                 } else {
                     parent.name.takeIf { it.isNotBlank() } ?: storageLabel
                 }
-                val folder = grouped.getOrPut(key) {
-                    MediaFolder(
-                        key = key,
-                        name = folderName,
-                        storageLabel = storageLabel
-                    )
-                }
-                folder.videos += MediaVideo(
+                MediaRules.add(grouped, key, folderName, storageLabel, MediaVideo(
                     title = child.name,
                     path = absolutePath,
                     uri = Uri.fromFile(child).toString(),
@@ -315,7 +281,7 @@ object MediaLibrary {
                     height = 0,
                     sizeBytes = try { child.length() } catch (_: Throwable) { 0L },
                     modifiedSeconds = try { child.lastModified() / 1000L } catch (_: Throwable) { 0L }
-                )
+                ), knownPaths)
             }
             if (android.os.SystemClock.elapsedRealtime() - lastUpdate > 500L) {
                 onUpdate()

@@ -28,6 +28,15 @@ class VideoAdapter(
     private val items: List<MediaVideo> get() = currentList
     private var history = emptyMap<String, PlaybackHistory.Entry?>()
     private var generation = 0
+    private var thumbnailsPaused = false
+    fun pauseThumbnails(recycler: RecyclerView, paused: Boolean) {
+        thumbnailsPaused = paused
+        for (index in 0 until recycler.childCount) {
+            val holder = recycler.getChildViewHolder(recycler.getChildAt(index)) as? Holder ?: continue
+            if (paused) holder.cancelThumbnail()
+            else if (holder.bindingAdapterPosition != RecyclerView.NO_POSITION) holder.loadThumbnail(getItem(holder.bindingAdapterPosition))
+        }
+    }
     private val selectedUris = linkedSetOf<String>()
 
     fun submit(videos: List<MediaVideo>) {
@@ -116,7 +125,7 @@ class VideoAdapter(
         private val resume: TextView = view.findViewById(R.id.videoResume)
 
         fun cancelThumbnail() = VideoThumbnailLoader.cancel(thumbnail)
-        fun loadThumbnail(item: MediaVideo) = VideoThumbnailLoader.load(thumbnail, item)
+        fun loadThumbnail(item: MediaVideo) { if (!thumbnailsPaused) VideoThumbnailLoader.load(thumbnail, item) }
         fun bindProgress(item: MediaVideo) {
             val history = history[identity(item)]
             if (history != null) {
@@ -140,7 +149,7 @@ class VideoAdapter(
             val size = formatSize(item.sizeBytes)
             meta.text = listOf(duration, resolution, size).filter { it.isNotBlank() }.joinToString("  ·  ")
 
-            VideoThumbnailLoader.load(thumbnail, item)
+            loadThumbnail(item)
 
             bindProgress(item)
 
@@ -156,7 +165,7 @@ class VideoAdapter(
     }
 
     companion object {
-        fun identity(video: MediaVideo): String = video.path?.takeIf { it.isNotBlank() } ?: video.uri
+        fun identity(video: MediaVideo): String = MediaRules.identity(video)
     }
 
     private fun formatResolution(width: Int, height: Int): String {

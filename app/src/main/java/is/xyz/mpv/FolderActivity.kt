@@ -128,6 +128,10 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     }
 
     private fun rescanFolder(showLoadingText: Boolean = true) {
+        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+            scanInterrupted = true
+            return
+        }
         if (showLoadingText) {
             emptyText.visibility = View.VISIBLE
             emptyText.text = "영상을 불러오는 중…"
@@ -140,13 +144,13 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
                 applySort()
                 emptyText.visibility = if (currentVideos.isEmpty()) View.VISIBLE else View.GONE
                 if (currentVideos.isEmpty()) emptyText.text = "영상이 없습니다."
-            } finally { swipeRefresh.isRefreshing = false }
+            } finally { if (coroutineContext[Job] === scanJob) swipeRefresh.isRefreshing = false }
         }
     }
 
     override fun onStop() {
         adapter.pauseThumbnails(recycler, true)
-        scanInterrupted = scanJob?.isActive == true
+        scanInterrupted = scanInterrupted || scanJob?.isActive == true
         scanJob?.cancel()
         launchJob?.cancel()
         super.onStop()
