@@ -20,6 +20,15 @@ internal object MediaRules {
         val folder = grouped.getOrPut(key) { MediaFolder(key, name, storageLabel = label) }
         folder.videos.add(video)
     }
+    fun sortVideos(videos: List<MediaVideo>, mode: Int, locale: Locale = Locale.getDefault()): List<MediaVideo> {
+        val byName = compareBy<MediaVideo> { it.title.lowercase(locale) }
+        return videos.sortedWith(when (mode) {
+            1 -> compareByDescending<MediaVideo> { it.modifiedSeconds }.then(byName)
+            2 -> compareByDescending<MediaVideo> { it.durationMs }.then(byName)
+            3 -> compareByDescending<MediaVideo> { it.sizeBytes }.then(byName)
+            else -> byName
+        })
+    }
     fun playlist(entries: Iterable<String>): String {
         val text = StringBuilder("memory://#EXTM3U\n")
         for (entry in entries) {

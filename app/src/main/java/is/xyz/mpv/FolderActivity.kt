@@ -36,6 +36,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     private var launchJob: Job? = null
     private var scanInterrupted = false
     private var activeVideo: MediaVideo? = null
+    private var activePlaylist: List<MediaVideo> = emptyList()
     private var pendingMoveVideos: List<MediaVideo> = emptyList()
 
     private val playerLauncher = registerForActivityResult(
@@ -45,7 +46,8 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
         activeVideo = null
         if (result.data != null) {
             val playedIndex = result.data!!.getIntExtra("playlist_index", -1)
-            val video = displayedVideos.getOrNull(playedIndex) ?: fallbackVideo
+            val video = activePlaylist.getOrNull(playedIndex) ?: fallbackVideo
+            activePlaylist = emptyList()
             val position = result.data!!.getIntExtra("position", -1)
             val duration = result.data!!.getIntExtra("duration", -1)
             if (video != null && position >= 0) {
@@ -163,21 +165,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     }
 
     private fun applySort() {
-        displayedVideos = when (sortMode) {
-            SORT_RECENT -> currentVideos.sortedWith(
-                compareByDescending<MediaVideo> { it.modifiedSeconds }
-                    .thenBy { it.title.lowercase(Locale.getDefault()) }
-            )
-            SORT_DURATION -> currentVideos.sortedWith(
-                compareByDescending<MediaVideo> { it.durationMs }
-                    .thenBy { it.title.lowercase(Locale.getDefault()) }
-            )
-            SORT_SIZE -> currentVideos.sortedWith(
-                compareByDescending<MediaVideo> { it.sizeBytes }
-                    .thenBy { it.title.lowercase(Locale.getDefault()) }
-            )
-            else -> currentVideos.sortedBy { it.title.lowercase(Locale.getDefault()) }
-        }
+        displayedVideos = MediaRules.sortVideos(currentVideos, sortMode)
         adapter.submit(displayedVideos)
     }
 
@@ -224,6 +212,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
                     PlaybackHistory.get(this@FolderActivity, video) else null
             }
             activeVideo = video
+            activePlaylist = snapshot
             OwlLaunchState.playlistStartIndex = prepared.first
             OwlLaunchState.resumePositionMs = history?.positionMs ?: -1L
             playerLauncher.launch(Intent(this@FolderActivity, MPVActivity::class.java).apply {
@@ -249,6 +238,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
             val result = OwlFileOperations.deleteVideos(this, selected)
             selected.forEach { PlaybackHistory.clear(this, it) }
             runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
                 adapter.clearSelection()
                 showOperationResult("삭제", result)
                 rescanFolder()
@@ -276,6 +266,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
             val result = OwlFileOperations.moveVideos(this, selected, destination)
             selected.forEach { PlaybackHistory.clear(this, it) }
             runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
                 adapter.clearSelection()
                 showOperationResult("이동", result)
                 rescanFolder()

@@ -290,6 +290,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         thread(name = "OwlPermanentFolderDelete") {
             val result = OwlFileOperations.deleteFolders(this, selected)
             runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
                 adapter.clearSelection()
                 showOperationResult("삭제", result)
                 loadFolders(force = true)
@@ -317,6 +318,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         thread(name = "OwlFolderMove") {
             val result = OwlFileOperations.moveFolders(this, selected, destination)
             runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
                 adapter.clearSelection()
                 showOperationResult("이동", result)
                 loadFolders(force = true)

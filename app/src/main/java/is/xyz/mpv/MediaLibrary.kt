@@ -39,9 +39,11 @@ object MediaLibrary {
 
     suspend fun refreshFolder(context: Context, key: String): MediaFolder? = scanMutex.withLock {
         withContext(Dispatchers.IO) {
-            val result = scanBlocking(context.applicationContext, currentCoroutineContext()[Job]!!,
-                true, key) {}
-            result.firstOrNull { it.key == key }
+            scanning = true
+            try {
+                val result = scanBlocking(context.applicationContext, currentCoroutineContext()[Job]!!, true, key) {}
+                result.firstOrNull { it.key == key }
+            } finally { scanning = false }
         }
     }
 
@@ -86,9 +88,15 @@ object MediaLibrary {
             }
 
             try {
-                resolver.query(collection, projection,
-                    folderKey?.let { if (it.startsWith("/")) "${MediaStore.Video.Media.DATA} LIKE ? ESCAPE '\\'" else "${MediaStore.Video.Media.RELATIVE_PATH} = ?" },
-                    folderKey?.let { arrayOf(if (it.startsWith("/")) it.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "/%" else it.substringAfter(':')) }, null)?.use { cursor ->
+                val selection = folderKey?.let {
+                    if (it.startsWith("/")) "${MediaStore.Video.Media.DATA} >= ? AND ${MediaStore.Video.Media.DATA} < ?"
+                    else "${MediaStore.Video.Media.RELATIVE_PATH} = ?"
+                }
+                val arguments = folderKey?.let {
+                    // '/' sorts immediately before '0': a bound prefix range also handles % and _ literally.
+                    if (it.startsWith("/")) arrayOf(it + "/", it + "0") else arrayOf(it.substringAfter(':'))
+                }
+                resolver.query(collection, projection, selection, arguments, null)?.use { cursor ->
                     val idCol = cursor.getColumnIndex(MediaStore.Video.Media._ID)
                     val nameCol = cursor.getColumnIndex(MediaStore.Video.Media.DISPLAY_NAME)
                     val dataCol = cursor.getColumnIndex(MediaStore.Video.Media.DATA)

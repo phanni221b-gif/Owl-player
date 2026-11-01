@@ -54,7 +54,7 @@ class MediaRulesTest {
 
     @Test fun historyKeysRemainCompatibleAcrossFileAndContentDiscovery() {
         assertEquals(MediaRules.historyKey("/ssd/a.mp4"), MediaRules.historyKey(MediaRules.identity(video("/ssd/a.mp4", "file:///ssd/a.mp4"))))
-        assertEquals(24, MediaRules.historyKey("/ssd/a.mp4").length)
+        assertEquals("6c75aa61ae340e03bf28b9af", MediaRules.historyKey("/ssd/a.mp4"))
         assertNotEquals(MediaRules.historyKey("/ssd/a.mp4"), MediaRules.historyKey("/ssd/b.mp4"))
     }
 
@@ -63,6 +63,19 @@ class MediaRulesTest {
         assertNull(MediaRules.resumeState(50_000, 60_000))
         assertEquals(10_000L to 60_000L, MediaRules.resumeState(10_000, 60_000))
         assertEquals(30_000L to 0L, MediaRules.resumeState(30_000, 0))
+    }
+
+    @Test fun allVideoSortModesKeepNameTieBreakAndPlaylistOrder() {
+        val a = video("/a", name = "alpha").copy(durationMs = 10, sizeBytes = 200, modifiedSeconds = 1)
+        val b = video("/b", name = "Beta").copy(durationMs = 30, sizeBytes = 200, modifiedSeconds = 3)
+        val c = video("/c", name = "charlie").copy(durationMs = 20, sizeBytes = 300, modifiedSeconds = 2)
+        val source = listOf(c, b, a)
+        assertEquals(listOf(a, b, c), MediaRules.sortVideos(source, 0, Locale.US))
+        assertEquals(listOf(b, c, a), MediaRules.sortVideos(source, 1, Locale.US))
+        assertEquals(listOf(b, c, a), MediaRules.sortVideos(source, 2, Locale.US))
+        assertEquals(listOf(c, a, b), MediaRules.sortVideos(source, 3, Locale.US))
+        val sorted = MediaRules.sortVideos(source, 3, Locale.US)
+        assertEquals(sorted.map { MediaRules.identity(it) }, MediaRules.playlist(sorted.map { MediaRules.identity(it) }).lines().drop(1).filter { it.isNotEmpty() })
     }
 
     @Test fun defaultsNeverOverwriteExistingTrueFalseOrEmptyValues() {

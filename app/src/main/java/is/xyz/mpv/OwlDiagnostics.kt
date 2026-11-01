@@ -97,6 +97,7 @@ object OwlDiagnostics {
                 screen, f.total, f.jank, if (f.total == 0L) 0.0 else f.jank * 100.0 / f.total, f.longestNs / 1e6))
             append(f.states.toString()).append('\n')
         }
+        append("\nLatest playback summary:\n").append(samples.peekLast() ?: "No playback samples yet").append('\n')
         append("\nRead-only playback samples (latest 300):\n")
         samples.forEach { append(it).append('\n') }
     }
