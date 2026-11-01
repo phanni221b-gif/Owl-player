@@ -27,3 +27,8 @@ jobs:
           /tmp/owl-render-pass-test
       - name: Compile and render both CNN models on Mesa OpenGL ES
         run: xvfb-run -a -s '-screen 0 1280x720x24' python3 tools/smoke_neural_gpu.py
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: neural-gles-debug
+          path: gpu-smoke-results/

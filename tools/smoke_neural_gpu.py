@@ -4,16 +4,20 @@ import json, os, pathlib, subprocess, tempfile
 from PIL import Image, ImageChops, ImageStat
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ASSETS = ROOT / 'app/src/main/assets/neural'
-with tempfile.TemporaryDirectory(prefix='owl-gles-') as directory:
-    work = pathlib.Path(directory)
+if True:
+    work = ROOT / 'gpu-smoke-results'
+    work.mkdir(exist_ok=True)
     fixture = work / 'fixture.mkv'
-    subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','smptebars=size=160x90:rate=12','-t','3','-c:v','ffv1',str(fixture)],check=True)
+    seed = work / 'seed.png'
+    subprocess.run(['ffmpeg','-y','-v','error','-f','lavfi','-i','testsrc2=size=160x90:rate=1','-frames:v','1',str(seed)],check=True)
+    subprocess.run(['ffmpeg','-y','-v','error','-loop','1','-i',str(seed),'-r','12','-t','3','-c:v','ffv1','-pix_fmt','yuv420p',str(fixture)],check=True)
     images = []
-    for channels in (0,8,16):
+    for channels in (0,8,16,-1):
+        model_channels = 8 if channels == -1 else channels
         output = work / f'{channels}.png'
         result = work / f'{channels}.json'
         lua = work / 'inspect.lua'
-        marker = f'Owl FSRCNNX {channels} RGB reconstruction' if channels else ''
+        marker = f'Owl FSRCNNX {model_channels} RGB reconstruction' if channels else ''
         lua.write_text('''local mp = require 'mp'
 local utils = require 'mp.utils'
 local attempts = 0
@@ -45,16 +49,28 @@ mp.register_event('file-loaded', function() mp.get_property_native('vo-passes');
         cmd = ['mpv','--no-config','--vo=gpu-next','--gpu-api=opengl','--gpu-context=x11egl','--opengl-es=yes',
             '--gpu-sw=yes','--term-status-msg=','--osc=no','--osd-level=0','--osd-bar=no','--hwdec=no','--no-audio','--loop-file=inf','--geometry=960x540','--scale=ewa_lanczossharp',
             '--dscale=mitchell','--fbo-format=rgba16f','--script='+str(lua),'--log-file='+str(work/f'{channels}.log')]
-        if channels: cmd.append('--glsl-shaders='+str(ASSETS/f'Owl-FSRCNNX-{channels}.glsl'))
+        if channels:
+            shader = ASSETS/f'Owl-FSRCNNX-{model_channels}.glsl'
+            if channels == -1:
+                control = work / 'red-control.glsl'
+                source = shader.read_text().replace('return vec4(color.rgb + vec3(neural - luma), color.a);','return vec4(1.0, 0.0, 0.0, 1.0);')
+                assert source != shader.read_text()
+                control.write_text(source); shader = control
+            cmd.append('--glsl-shaders='+str(shader))
         subprocess.run(cmd+[str(fixture)],check=True,timeout=90,env={**os.environ,'LIBGL_ALWAYS_SOFTWARE':'1'})
         data = json.loads(result.read_text())
         descriptions = ' '.join(data['descriptions'])
         if channels:
             assert marker in descriptions
-            assert f'Owl FSRCNNX {24-channels} RGB reconstruction' not in descriptions
-        im = Image.open(output).convert('RGB'); images.append(im)
+            assert f'Owl FSRCNNX {24-model_channels} RGB reconstruction' not in descriptions
+        im = Image.open(output).convert('RGB')
         assert im.size == (960,540), 'screenshot must capture scaled renderer output'
         colors = ImageStat.Stat(im).mean
+        print(f'Output {channels}: size={im.size}, RGB means={colors}')
+        if channels == -1:
+            assert colors[0]>220 and colors[1]<20 and colors[2]<20, 'capture is not observing the actual post-hook renderer output'
+            continue
+        images.append(im)
         assert min(colors)>20 and max(colors)<240, 'blank/invalid image'
         assert ImageStat.Stat(ImageChops.difference(im.getchannel('R'),im.getchannel('G'))).mean[0]>10, 'RGB reconstruction lost chroma'
         print(f'Mesa GLES model {channels}: actual render confirmed; {data["version"]}; hwdec={data["hwdec"]}')
