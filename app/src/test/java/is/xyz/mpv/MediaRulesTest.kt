@@ -79,9 +79,9 @@ class MediaRulesTest {
     }
 
     @Test fun defaultsNeverOverwriteExistingTrueFalseOrEmptyValues() {
-        val existing = mapOf("video_fastdecode" to true, "gpu_next" to false, "video_debanding" to "")
+        val existing = mapOf("video_fastdecode" to true, "gpu_next" to false, "video_debanding" to "", "gesture_tap_left" to "none")
         val defaults = mapOf<String, Any>("video_fastdecode" to false, "gpu_next" to true,
-            "video_debanding" to "gpu", "new_setting" to true)
+            "video_debanding" to "gpu", "gesture_tap_left" to "seek", "new_setting" to true)
         assertEquals(mapOf("new_setting" to true), MediaRules.missingDefaults(existing, defaults))
     }
 }

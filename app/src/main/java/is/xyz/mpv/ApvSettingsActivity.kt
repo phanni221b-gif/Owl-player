@@ -94,30 +94,20 @@ class ApvSettingsActivity : AppCompatActivity(R.layout.activity_apv_settings) {
 
         fun ensureDefaults(context: Context) {
             val prefs = PreferenceManager.getDefaultSharedPreferences(context)
-            val balanced = mapOf<String, Any>(KEY_MODE to MODE_BALANCED, "video_scale" to "bicubic",
-                "video_downscale" to "bilinear", "video_debanding" to "", "gpu_next" to false,
-                "video_fastdecode" to false)
-            val defaults = MediaRules.missingDefaults(prefs.all, balanced)
-            prefs.edit().also { editor -> defaults.forEach { (key, value) ->
+            val defaults = mapOf<String, Any>(
+                KEY_MODE to MODE_BALANCED, "video_scale" to "bicubic", "video_downscale" to "bilinear",
+                "video_debanding" to "", "gpu_next" to false, "video_fastdecode" to false,
+                KEY_DECODER_MODE to DECODER_AUTO, "hardware_decoding" to true, KEY_RESUME to true,
+                "auto_rotation" to "auto", "display_media_title" to true, "bottom_controls" to true,
+                "playlist_exit_warning" to false, "gesture_horiz" to "seek", "gesture_vert_left" to "bright",
+                "gesture_vert_right" to "volume", "gesture_tap_left" to "seek",
+                "gesture_tap_center" to "playpause", "gesture_tap_right" to "seek"
+            )
+            val missing = MediaRules.missingDefaults(prefs.all, defaults)
+            if (missing.isEmpty()) return
+            prefs.edit().also { editor -> missing.forEach { (key, value) ->
                 when (value) { is Boolean -> editor.putBoolean(key, value); is String -> editor.putString(key, value) }
             } }.apply()
-
-            val edit = prefs.edit()
-            if (!prefs.contains(KEY_DECODER_MODE)) edit.putString(KEY_DECODER_MODE, DECODER_AUTO)
-            if (!prefs.contains("hardware_decoding")) edit.putBoolean("hardware_decoding", true)
-            if (!prefs.contains(KEY_RESUME)) edit.putBoolean(KEY_RESUME, true)
-            if (!prefs.contains("auto_rotation")) edit.putString("auto_rotation", "auto")
-            if (!prefs.contains("display_media_title")) edit.putBoolean("display_media_title", true)
-            if (!prefs.contains("bottom_controls")) edit.putBoolean("bottom_controls", true)
-            if (!prefs.contains("playlist_exit_warning")) edit.putBoolean("playlist_exit_warning", false)
-            if (!prefs.contains("video_fastdecode")) edit.putBoolean("video_fastdecode", false)
-            edit.apply()
-
-            if (!prefs.contains("gesture_tap_left") ||
-                !prefs.contains("gesture_tap_center") ||
-                !prefs.contains("gesture_tap_right")) {
-                applyMxGestures(context, true)
-            }
         }
 
         fun isResumeEnabled(context: Context): Boolean =
