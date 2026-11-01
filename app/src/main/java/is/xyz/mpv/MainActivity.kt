@@ -44,7 +44,6 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private var fileJob: Job? = null
     private var rootsJob: Job? = null
     private var foregroundEntries = 0
-    private val rootsWorker = ProviderQueryRunner(1, "OwlMainStorageRoots")
     private var waitingForAllFiles = false
     private var currentFolders: List<MediaFolder> = emptyList()
     private var storageRoots: List<StorageRoot> = emptyList()
@@ -445,6 +444,8 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     }
 
     companion object {
+        // Shared across Activity recreation: ignored OS cancellation cannot grow worker count.
+        private val rootsWorker = ProviderQueryRunner(2, "OwlMainStorageRoots")
         private const val PREFS_UI = "owl_ui"
         private const val KEY_SORT = "folder_sort"
         private const val SORT_NAME = 0
