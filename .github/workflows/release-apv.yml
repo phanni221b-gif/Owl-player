@@ -180,6 +180,7 @@ jobs:
           EXPECTED=$(cat .github/owl-signing/release-cert.sha256)
           ACTUAL=$(awk '/certificate SHA-256 digest:/ {print $NF; exit}' signing.txt)
           test "$ACTUAL" = "$EXPECTED"
+          python3 tools/verify_release_payload.py "$APK"
           cp "$APK" Owl-${{ env.OWL_VERSION }}-arm64.apk
           sha256sum Owl-${{ env.OWL_VERSION }}-arm64.apk > Owl-${{ env.OWL_VERSION }}-arm64.sha256
           cp buildscripts/include/native-revisions.sh native-revisions.txt
