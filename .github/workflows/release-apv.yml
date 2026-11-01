@@ -108,6 +108,7 @@ jobs:
               out.parent.mkdir(parents=True, exist_ok=True)
               master.resize((size, size), Image.Resampling.LANCZOS).save(out, 'PNG', optimize=True)
           PY
+          cp /tmp/owl_launcher_icon.png app/src/main/res/drawable-nodpi/owl_launcher_source.png
           rm -f app/src/main/res/mipmap-anydpi-v26/owl_launcher_icon.xml
           rm -f app/src/main/res/mipmap-anydpi-v26/owl_launcher_foreground.xml
           rm -f app/src/main/res/mipmap-xxxhdpi/owl_launcher_art.webp
