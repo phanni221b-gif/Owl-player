@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
 """Desktop Mesa GLES smoke only: not an Android/Fold GPU performance certification."""
-import json, os, pathlib, subprocess, tempfile, time
+import json, os, pathlib, subprocess, time
 from PIL import Image, ImageChops, ImageStat
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ASSETS = ROOT / 'app/src/main/assets/neural'
-if True:
+def main():
     work = ROOT / 'gpu-smoke-results'
     work.mkdir(exist_ok=True)
     fixture = work / 'fixture.mkv'
@@ -15,7 +15,6 @@ if True:
     for channels in (0,8,16,-1):
         model_channels = 8 if channels == -1 else channels
         output = work / f'{channels}.png'
-        internal = work / f'mpv-{channels}.png'
         result = work / f'{channels}.json'
         lua = work / 'inspect.lua'
         marker = f'Owl FSRCNNX {model_channels} RGB reconstruction' if channels else ''
@@ -33,7 +32,6 @@ local function inspect()
         if string.find(pass.desc or '', MARKER, 1, true) then matched = true end
     end
     if matched then
-        mp.commandv('screenshot-to-file', OUTPUT, 'window')
         local file = assert(io.open(RESULT .. '.tmp', 'w'))
         local encoded, failure = utils.format_json({descriptions=descriptions, version=mp.get_property('mpv-version') or 'unknown', hwdec=mp.get_property('hwdec-current') or 'no'})
         if not encoded then file:close(); mp.msg.error(failure or 'JSON encoding failed'); mp.commandv('quit', '2'); return end
@@ -47,7 +45,7 @@ local function inspect()
     else mp.add_timeout(0.25, inspect) end
 end
 mp.register_event('file-loaded', function() mp.get_property_native('vo-passes'); mp.add_timeout(0.5, inspect) end)
-'''.replace('MARKER',json.dumps(marker)).replace('OUTPUT',json.dumps(str(internal))).replace('RESULT',json.dumps(str(result))))
+'''.replace('MARKER',json.dumps(marker)).replace('RESULT',json.dumps(str(result))))
         cmd = ['mpv','--no-config','--vo=gpu-next','--gpu-api=opengl','--gpu-context=x11egl','--opengl-es=yes',
             '--gpu-sw=yes','--term-status-msg=','--osc=no','--osd-level=0','--osd-bar=no','--hwdec=no','--no-audio','--loop-file=inf','--geometry=960x540+0+0','--border=no','--scale=ewa_lanczossharp',
             '--dscale=mitchell','--fbo-format=rgba16f','--script='+str(lua),'--log-file='+str(work/f'{channels}.log')]
@@ -98,4 +96,6 @@ mp.register_event('file-loaded', function() mp.get_property_native('vo-passes');
     print(f'Rendered RGB mean absolute difference: base/neural={baseline_delta}, neural/max={model_delta}')
     assert baseline_delta>0.001
     assert model_delta>0.001
-print('Neural/AI Max compile, mutually exclusive execution, colored output, distinct CNN results: PASS')
+if __name__ == '__main__':
+    main()
+    print('Neural/AI Max compile, mutually exclusive execution, colored output, distinct CNN results: PASS')
