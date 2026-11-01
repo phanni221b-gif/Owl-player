@@ -39,7 +39,7 @@ end
 mp.register_event('file-loaded', function() mp.get_property_native('vo-passes'); mp.add_timeout(0.5, inspect) end)
 '''.replace('MARKER',json.dumps(marker)).replace('OUTPUT',json.dumps(str(output))).replace('RESULT',json.dumps(str(result))))
         cmd = ['mpv','--no-config','--vo=gpu-next','--gpu-api=opengl','--gpu-context=x11egl','--opengl-es=yes',
-            '--hwdec=no','--no-audio','--loop-file=inf','--geometry=960x540','--scale=ewa_lanczossharp',
+            '--gpu-sw=yes','--hwdec=no','--no-audio','--loop-file=inf','--geometry=960x540','--scale=ewa_lanczossharp',
             '--dscale=mitchell','--fbo-format=rgba16f','--script='+str(lua),'--log-file='+str(work/f'{channels}.log')]
         if channels: cmd.append('--glsl-shaders='+str(ASSETS/f'Owl-FSRCNNX-{channels}.glsl'))
         subprocess.run(cmd+[str(fixture)],check=True,timeout=90,env={**os.environ,'LIBGL_ALWAYS_SOFTWARE':'1'})
