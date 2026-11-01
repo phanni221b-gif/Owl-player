@@ -21,6 +21,16 @@ object OwlDiagnostics {
         val states: MutableMap<String, Long> = mutableMapOf())
     private val frames = linkedMapOf<String, Frames>()
     private val samples = java.util.ArrayDeque<String>()
+    private val rendererErrors = java.util.ArrayDeque<String>()
+    internal fun rendererRecorder(): (RendererAttemptContext, RendererFailure) -> Unit {
+        val epoch = runtimeEpoch
+        return { context, failure -> synchronized(this) {
+            if (epoch == runtimeEpoch) {
+                if (rendererErrors.size >= 160) rendererErrors.removeFirst()
+                rendererErrors.addLast(SystemClock.elapsedRealtime().toString() + " ms: " + context.summary() + ", " + failure.summary())
+            }
+        } }
+    }
     private val storageEvents = java.util.ArrayDeque<String>()
     @Volatile private var quality = "No source metadata yet"
     fun qualitySummary(summary: String) { quality = summary }
@@ -37,7 +47,7 @@ object OwlDiagnostics {
     private val stoppers = linkedSetOf<() -> Unit>()
     fun resetRuntime() {
         stoppers.toList().forEach { it() }; stoppers.clear()
-        synchronized(this) { runtimeEpoch++; frames.clear(); samples.clear(); storageEvents.clear(); quality = "No source metadata yet" }
+        synchronized(this) { runtimeEpoch++; frames.clear(); samples.clear(); storageEvents.clear(); rendererErrors.clear(); quality = "No source metadata yet" }
     }
     fun enabled(context: Context) = context.getSharedPreferences(PREFS, 0).getBoolean("enabled", false)
     fun setEnabled(context: Context, value: Boolean) {
@@ -124,6 +134,8 @@ object OwlDiagnostics {
         }
         append("\nStorage discovery transitions (latest 200):\n")
         storageEvents.forEach { append(it).append('\n') }
+        append("\nSanitized renderer failures (latest 160; no raw messages):\n")
+        rendererErrors.forEach { append(it).append('\n') }
         append("\nQuality pipeline:\n").append(quality).append('\n')
         append("\nLatest playback summary:\n").append(samples.peekLast() ?: "No playback samples yet").append('\n')
         append("\nRead-only playback samples (latest 300):\n")
@@ -136,7 +148,7 @@ object OwlDiagnostics {
             .setMessage(report).setPositiveButton("복사") { _, _ ->
                 (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
                     .setPrimaryClip(ClipData.newPlainText("Owl diagnostics", report))
-            }.setNeutralButton("기록 초기화") { _, _ -> synchronized(this) { frames.clear(); samples.clear() } }
+            }.setNeutralButton("기록 초기화") { _, _ -> synchronized(this) { frames.clear(); samples.clear(); rendererErrors.clear() } }
             .setNegativeButton("닫기", null).show()
     }
 }
