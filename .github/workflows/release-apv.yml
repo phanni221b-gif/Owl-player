@@ -55,12 +55,12 @@ jobs:
       - name: Verify protected playback core baseline and pan contract
         run: |
           cat > /tmp/owl-protected-core.sha256 <<'EOF'
-          b41448d1231a47fe1c57be35df0a17c12f4f90e1d23a9c9467820dc5ed39cba0  app/src/main/java/is/xyz/mpv/MPVLib.kt
+          cc42b688f554b911ef3bb2d695d07f8ac8cb2630abfe5471775b49717e30a783  app/src/main/java/is/xyz/mpv/MPVLib.kt
           90334a608653afcb780ac967c9905d2aad2c15a537cb429560bd3739e8df1ace  app/src/main/java/is/xyz/mpv/BaseMPVView.kt
           97346f93971d56b4efe3ca8ec5f67c5fcb89718cbb3d9e0a9454210c9763d35c  app/src/main/java/is/xyz/mpv/MPVView.kt
           6baf03bfa52ee9ed4542a74f7e51a526009565a220cc767bb03533bc2c473c98  app/src/main/jni/Android.mk
           32f7151a08f806dcf9ef96497ddec824105cd1baa7ef068e9a2899fae8d683de  app/src/main/jni/Application.mk
-          b5903f338635e461978ca36671d015c89b7f0a04465824bbb786e1f7c7e2c6bb  app/src/main/jni/event.cpp
+          ff9414a6d5669ea0477c06095354784fe0fc53dbaa58558de6c6912979954614  app/src/main/jni/event.cpp
           906952620c7093a37136e3f3ccb06b9eb7f2e49f435bba76e8da8c038cc521f8  app/src/main/jni/event.h
           feb2005a32a303d41a2fa4ac551a21ef9f2218d59d6d96fc78dbaecab5a87695  app/src/main/jni/globals.h
           99dced62480bd0b47d4431bfcb135a0e4346081c9619f771d0f55fe2d5684349  app/src/main/jni/jni_utils.cpp
@@ -68,7 +68,7 @@ jobs:
           e7822acbca4c320c00a16409deca2ec592ce125d321c3767b12cba8ff5e5f938  app/src/main/jni/log.cpp
           cc7b805ba9cf45490d9821fa3243422f0077478a604065fae759fc6c38d0e10d  app/src/main/jni/log.h
           265d72935e35b0cdfc82d7b80768e0d039531a46d2ab2d434f1ca1a189578f03  app/src/main/jni/main.cpp
-          20c5e34f012b3b2ac43ee76598956a6bca8b0efa1de409d48e49075c53e7ce7a  app/src/main/jni/property.cpp
+          e27e1a63844c39ec7b34e732356705caaa3d7c495381ab560363a0e470ed26cc  app/src/main/jni/property.cpp
           0b0e88150e59d0c65c95a9393e875e15ca7c7f08b473a7909985d9265ded3902  app/src/main/jni/render.cpp
           c2fa4747b5f6b0dbd46754da8a21e1d816ff1a5952ebd1d5611b88f8bb34064e  app/src/main/jni/thumbnail.cpp
           3d6693d3ef359437ca54cabaadb973901a95198d4d917a4438d8bf285af3f6fe  buildscripts/scripts/ffmpeg.sh
@@ -76,7 +76,7 @@ jobs:
           7cd7f3a6c9f7da6176be5bfc0c6d3c0be39ea5582919f3b6dd2ddb82a6342953  buildscripts/scripts/libplacebo.sh
           043338c15fbbd79e505a7f96c3436fc6ba16f81e4cbd41351742e2d65f632853  buildscripts/scripts/mpv.sh
           33fd2e40e11c45dc3ebd92f6b1bca51aba79339e31abdfc4545cab280fd5e95c  buildscripts/scripts/mpv-android.sh
-          0be8586578ddd935b3ae73be514b55267578b871f03f02303c95d5aa9de21fb7  app/src/main/jni/render_pass_stats.h
+          ad7b8643fdb7fe403a70ee682ab4a55dc11db9d7d3ecefd0d948a6030234e2d2  app/src/main/jni/render_pass_stats.h
           a69956145ee1d270c61826734e5d51501714667a8359c8db28203f409f71c699  app/src/main/java/is/xyz/mpv/TouchGestures.kt
           EOF
           sha256sum -c /tmp/owl-protected-core.sha256

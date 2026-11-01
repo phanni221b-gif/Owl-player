@@ -1,6 +1,5 @@
 #include <jni.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include "render_pass_stats.h"
 
 #include <mpv/client.h>
@@ -21,7 +20,7 @@ extern "C" {
     jni_func(jstring, getPropertyString, jstring jproperty);
     jni_func(void, setPropertyString, jstring jproperty, jstring jvalue);
 
-    jni_func(jstring, getRenderPassSummary);
+    jni_func(jint, requestRenderPassSummary, jlong request_id);
 
     jni_func(void, observeProperty, jstring property, jint format);
 }
@@ -128,15 +127,9 @@ jni_func(void, observeProperty, jstring property, jint format) {
     env->ReleaseStringUTFChars(property, prop);
 }
 
-// vo-passes explicitly does not support string subkeys; use its documented NODE representation.
-jni_func(jstring, getRenderPassSummary) {
+// Async request only. Replies are summarized in event.cpp; the UI never waits for VO timing.
+jni_func(jint, requestRenderPassSummary, jlong request_id) {
     CHECK_MPV_INIT();
-    mpv_node root = {};
-    if (mpv_get_property(g_mpv, "vo-passes", MPV_FORMAT_NODE, &root) < 0) return NULL;
-    const auto stats = owl_render_pass_stats(root);
-    mpv_free_node_contents(&root);
-    char buffer[160];
-    snprintf(buffer, sizeof(buffer), "n8=%d,n16=%d,passes=%d,avg_ns=%lld",
-        stats.neural8 ? 1 : 0, stats.neural16 ? 1 : 0, stats.passes, (long long)stats.average_ns);
-    return env->NewStringUTF(buffer);
+    const uint64_t token = OWL_RENDER_QUERY_TAG | (static_cast<uint64_t>(request_id) & OWL_RENDER_QUERY_MASK);
+    return mpv_get_property_async(g_mpv, token, "vo-passes", MPV_FORMAT_NODE);
 }

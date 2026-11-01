@@ -4,6 +4,9 @@
 #include <cstdint>
 #include <limits>
 
+constexpr uint64_t OWL_RENDER_QUERY_TAG = 0x4F574C0000000000ULL;
+constexpr uint64_t OWL_RENDER_QUERY_MASK = 0xFFFFFFFFULL;
+
 // Read-only NODE traversal. Never returns pass descriptions or private file paths to Java.
 struct OwlRenderPassStats {
     bool neural8 = false;

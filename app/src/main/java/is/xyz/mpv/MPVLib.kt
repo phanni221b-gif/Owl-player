@@ -35,7 +35,7 @@ object MPVLib {
     external fun setPropertyBoolean(property: String, value: Boolean)
     external fun getPropertyString(property: String): String?
     /** Read-only numeric summary; no shader paths or arbitrary descriptions escape JNI. */
-    external fun getRenderPassSummary(): String?
+    external fun requestRenderPassSummary(requestId: Long): Int
     external fun setPropertyString(property: String, value: String)
 
     external fun observeProperty(property: String, format: Int)

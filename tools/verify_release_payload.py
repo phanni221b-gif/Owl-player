@@ -22,5 +22,5 @@ with zipfile.ZipFile(apk) as archive:
         library = pathlib.Path(temporary)/'libplayer.so'
         library.write_bytes(archive.read('lib/arm64-v8a/libplayer.so'))
         symbols = subprocess.check_output(['readelf','--dyn-syms','--wide',str(library)],text=True)
-        assert 'Java_is_xyz_mpv_MPVLib_getRenderPassSummary' in symbols
+        assert 'Java_is_xyz_mpv_MPVLib_requestRenderPassSummary' in symbols
 print('Release payload: pinned model sources/licenses, arm64 ELF and render-pass JNI export PASS')

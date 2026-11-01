@@ -63,13 +63,14 @@ object OwlDiagnostics {
                     fun number(key: String) = runCatching { MPVLib.getPropertyDouble(key)?.toString() }.getOrNull() ?: "n/a"
                     fun text(key: String) = runCatching { MPVLib.getPropertyString(key) }.getOrNull() ?: "n/a"
                     fun flag(key: String) = runCatching { MPVLib.getPropertyBoolean(key)?.toString() }.getOrNull() ?: "n/a"
+                    RendererInspection.request()
                     val refresh = activity.windowManager.defaultDisplay.refreshRate
                     val line = "t=" + SystemClock.elapsedRealtime() + " ms, Display=" + refresh + " Hz, " +
                         listOf("estimated-vf-fps", "frame-drop-count", "decoder-frame-drop-count", "avsync",
                             "total-avsync-change", "vo-delayed-frame-count", "demuxer-cache-duration")
                             .joinToString(", ") { it + "=" + number(it) } +
                         ", current-vo=" + text("current-vo") + ", hwdec-current=" + text("hwdec-current") + ", paused-for-cache=" + flag("paused-for-cache") +
-                        ", renderer-pass-summary=" + runCatching { MPVLib.getRenderPassSummary() }.getOrNull()
+                        ", renderer-pass-summary=" + (RendererInspection.latest() ?: "n/a")
                     synchronized(this@OwlDiagnostics) {
                         if (samples.size >= 300) samples.removeFirst()
                         samples.addLast(line)

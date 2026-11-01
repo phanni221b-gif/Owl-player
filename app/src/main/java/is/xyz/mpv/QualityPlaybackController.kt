@@ -43,7 +43,7 @@ internal class QualityPlaybackController(context: Context, private val selectRen
             startConfirmation(generation, attemptNumber, mode)
     }
     init {
-        MPVLib.addObserver(this); MPVLib.addLogObserver(this)
+        MPVLib.addObserver(this); MPVLib.addLogObserver(this); RendererInspection.attach()
         MPVLib.observeProperty("osd-dimensions", MPVLib.MpvFormat.MPV_FORMAT_NONE)
         MPVLib.observeProperty("video-zoom", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
     }
@@ -53,6 +53,7 @@ internal class QualityPlaybackController(context: Context, private val selectRen
             when (eventId) {
                 MPVLib.MpvEvent.MPV_EVENT_START_FILE -> {
                     generation++; attemptNumber++; metadataJob?.cancel(); confirmation?.cancel(); handler.removeCallbacks(geometryCheck)
+                    RendererInspection.reset()
                     decided = false; deciding = false; source = null; fallback = null; attempted = null
                     val previous = configuration
                     configuration = QualityPreferences.read(app)
@@ -111,7 +112,7 @@ internal class QualityPlaybackController(context: Context, private val selectRen
             val mode = chain.current ?: run { shaderStatus = "quality_options_failed_playback_retained"; report(); return }
             val rejected = QualityPolicy().rejection(mode, source!!, MPVLib.getPropertyString("current-vo") == "gpu-next")
             if (rejected != null) { chain.fail(rejected); continue }
-            attempted = mode; attemptNumber++
+            attempted = mode; attemptNumber++; RendererInspection.reset()
             val attempt = attemptNumber
             confirmation?.cancel()
             if (!managedQuality && mode == configuration.base) {
@@ -157,7 +158,8 @@ internal class QualityPlaybackController(context: Context, private val selectRen
                 if (upscaleRequired() == false) {
                     effective = QualityMode.ULTRA; shaderStatus = "bypassed_no_upscale"; report(); return@launch
                 }
-                renderer = runCatching { RenderPassSummary.parse(MPVLib.getRenderPassSummary()) }.getOrNull()
+                RendererInspection.request()
+                renderer = RenderPassSummary.parse(RendererInspection.latest())
                 val matched = if (mode == QualityMode.AI_MAX) renderer?.neural16 == true else renderer?.neural8 == true
                 if (matched) { effective = mode; shaderStatus = "loaded_and_rendered"; report(); return@launch }
             }
@@ -211,7 +213,7 @@ internal class QualityPlaybackController(context: Context, private val selectRen
     fun close() {
         if (closed) return
         closed = true; generation++; attemptNumber++
-        MPVLib.removeObserver(this); MPVLib.removeLogObserver(this)
+        MPVLib.removeObserver(this); MPVLib.removeLogObserver(this); RendererInspection.detach()
         handler.removeCallbacksAndMessages(null); scope.cancel()
     }
     override fun eventProperty(property: String) { if (property == "osd-dimensions") geometryChanged() }
