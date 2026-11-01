@@ -30,7 +30,9 @@ local function inspect()
     if matched then
         mp.commandv('screenshot-to-file', OUTPUT, 'video')
         local file = assert(io.open(RESULT, 'w'))
-        file:write(utils.format_json({descriptions=descriptions, version=mp.get_property('mpv-version') or 'unknown', hwdec=mp.get_property('hwdec-current') or 'no'}))
+        local encoded, failure = utils.format_json({descriptions=descriptions, version=mp.get_property('mpv-version') or 'unknown', hwdec=mp.get_property('hwdec-current') or 'no'})
+        if not encoded then file:close(); mp.msg.error(failure or 'JSON encoding failed'); mp.commandv('quit', '2'); return end
+        file:write(encoded)
         file:close()
         mp.commandv('quit', '0')
     elseif attempts > 80 then
