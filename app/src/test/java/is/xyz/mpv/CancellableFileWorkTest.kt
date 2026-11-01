@@ -18,6 +18,18 @@ class CancellableFileWorkTest {
         assertEquals(4L * 1024 * 1024, source.length())
         assertFalse(target.exists())
     }
+    @Test fun cancellationAfterCopyRetainsCompleteDestination() {
+        val source = temp.newFile("source2.bin").apply { writeText("preserve this"); setLastModified(1_000_000L) }
+        val target = File(temp.root, "target2.bin")
+        try {
+            CancellableFileWork.copyThenMove(source, target) {
+                if (target.exists() && target.length() == source.length() && target.lastModified() == source.lastModified()) throw CancellationException()
+            }
+            fail()
+        } catch (_: CancellationException) { }
+        assertEquals("preserve this", source.readText())
+        assertEquals("preserve this", target.readText())
+    }
     @Test fun completedCopyPreservesDataAndDeletesSource() {
         val source = temp.newFolder("source")
         File(source, "video").writeText("keep this")

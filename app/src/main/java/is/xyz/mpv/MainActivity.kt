@@ -53,6 +53,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private val moveDestinationLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        if (OwlSession.ending || isFinishing || isDestroyed) return@registerForActivityResult
         val selected = pendingMoveFolders
         pendingMoveFolders = emptyList()
         if (result.resultCode != RESULT_OK || selected.isEmpty()) return@registerForActivityResult
@@ -174,6 +175,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
 
     private fun loadFolders(showLoadingText: Boolean = true, force: Boolean = false) {
+        if (OwlSession.ending || isFinishing || isDestroyed) return
         if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
             scanInterrupted = true
             pendingForce = pendingForce || force

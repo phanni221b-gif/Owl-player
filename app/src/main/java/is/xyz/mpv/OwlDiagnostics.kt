@@ -21,10 +21,21 @@ object OwlDiagnostics {
         val states: MutableMap<String, Long> = mutableMapOf())
     private val frames = linkedMapOf<String, Frames>()
     private val samples = java.util.ArrayDeque<String>()
+    private val storageEvents = java.util.ArrayDeque<String>()
+    @Volatile private var runtimeEpoch = 0L
+    fun storageRecorder(): (String) -> Unit {
+        val epoch = runtimeEpoch
+        return { event -> synchronized(this) {
+            if (epoch == runtimeEpoch) {
+                if (storageEvents.size >= 40) storageEvents.removeFirst()
+                storageEvents.addLast(SystemClock.elapsedRealtime().toString() + " ms: " + event)
+            }
+        } }
+    }
     private val stoppers = linkedSetOf<() -> Unit>()
     fun resetRuntime() {
         stoppers.toList().forEach { it() }; stoppers.clear()
-        synchronized(this) { frames.clear(); samples.clear() }
+        synchronized(this) { runtimeEpoch++; frames.clear(); samples.clear(); storageEvents.clear() }
     }
     fun enabled(context: Context) = context.getSharedPreferences(PREFS, 0).getBoolean("enabled", false)
     fun setEnabled(context: Context, value: Boolean) {
@@ -77,6 +88,7 @@ object OwlDiagnostics {
                 active = true
                 stoppers.add(stop)
                 recycler?.addOnScrollListener(scrollListener)
+                val epoch = runtimeEpoch
                 tracker = JankStats.createAndTrack(activity.window) { data ->
                     val state = listOfNotNull(
                         if (scrolling.get()) "scrolling" else null,
@@ -84,6 +96,7 @@ object OwlDiagnostics {
                         if (VideoThumbnailLoader.loading > 0) "thumbnail loading" else null
                     ).joinToString(" + ").ifEmpty { "idle" }
                     synchronized(this@OwlDiagnostics) {
+                        if (epoch != runtimeEpoch) return@createAndTrack
                         val f = frames.getOrPut(screen) { Frames() }
                         f.total++
                         if (data.isJank) f.jank++
@@ -105,6 +118,8 @@ object OwlDiagnostics {
                 screen, f.total, f.jank, if (f.total == 0L) 0.0 else f.jank * 100.0 / f.total, f.longestNs / 1e6))
             append(f.states.toString()).append('\n')
         }
+        append("\nStorage discovery transitions (latest 40):\n")
+        storageEvents.forEach { append(it).append('\n') }
         append("\nLatest playback summary:\n").append(samples.peekLast() ?: "No playback samples yet").append('\n')
         append("\nRead-only playback samples (latest 300):\n")
         samples.forEach { append(it).append('\n') }

@@ -44,6 +44,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     private val playerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        if (OwlSession.ending || isFinishing || isDestroyed) return@registerForActivityResult
         val fallbackVideo = activeVideo
         activeVideo = null
         if (result.data != null) {
@@ -67,6 +68,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     private val moveDestinationLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
     ) { result ->
+        if (OwlSession.ending || isFinishing || isDestroyed) return@registerForActivityResult
         val selected = pendingMoveVideos
         pendingMoveVideos = emptyList()
         if (result.resultCode != RESULT_OK || selected.isEmpty()) return@registerForActivityResult
@@ -136,6 +138,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     }
 
     private fun rescanFolder(showLoadingText: Boolean = true) {
+        if (OwlSession.ending || isFinishing || isDestroyed) return
         if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
             scanInterrupted = true
             return
@@ -204,6 +207,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     }
 
     private fun playVideo(video: MediaVideo, resume: Boolean) {
+        if (OwlSession.ending || isFinishing || isDestroyed) return
         if (launchJob?.isActive == true) return
         val snapshot = displayedVideos.toList()
         scanJob?.cancel()

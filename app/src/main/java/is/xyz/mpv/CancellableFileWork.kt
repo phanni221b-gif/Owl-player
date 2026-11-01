@@ -9,7 +9,7 @@ internal object CancellableFileWork {
     fun deleteTree(file: File, check: () -> Unit): Boolean {
         check()
         if (!file.exists()) return true
-        if (file.isDirectory) {
+        if (file.isDirectory && !isSymbolicLink(file)) {
             val children = file.listFiles() ?: return false
             for (child in children) if (!deleteTree(child, check)) return false
         }
@@ -42,8 +42,15 @@ internal object CancellableFileWork {
         }
     }
 
+    private fun isSymbolicLink(file: File): Boolean {
+        val parent = file.parentFile?.canonicalFile
+        val normalized = if (parent == null) file.absoluteFile else File(parent, file.name)
+        return normalized.canonicalFile != normalized.absoluteFile
+    }
+
     private fun copy(source: File, target: File, check: () -> Unit) {
         check()
+        if (isSymbolicLink(source)) throw IOException("Cross-volume symbolic-link copying is unsupported")
         if (source.isDirectory) {
             if (!target.mkdir()) throw IOException("Cannot create destination directory")
             val children = source.listFiles() ?: throw IOException("Source directory unavailable")

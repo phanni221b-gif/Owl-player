@@ -46,13 +46,13 @@ object MediaLibrary {
             fun publish(folders: List<MediaFolder>) {
                 ownership.publish(ticket) { cache = folders; onUpdate(folders) }
             }
-            val result = DiscoveryPipeline.discover(
+            val result = withContext(Dispatchers.Default) { DiscoveryPipeline.discover(
                 primary = { queryVolume(app, primaryVolume(), null, false) },
                 volumes = { removableVolumes(app) },
                 external = { queryVolume(app, it, null, true) },
                 reconcile = { emit -> reconcile(app, force, null, ticket, emit) },
                 publish = ::publish
-            )
+            ) }
             publish(result)
             return result
         } finally { ownership.finish(ticket) }
@@ -63,16 +63,17 @@ object MediaLibrary {
         try {
             // A folder refresh never calls scan() or enumerates unrelated provider volumes.
             val cached = cache.firstOrNull { it.key == key }
-            val volume = cached?.videos?.firstNotNullOfOrNull { video ->
+            val primaryRoot = Environment.getExternalStorageDirectory().absolutePath
+            val volume = cached?.videos?.firstOrNull()?.let { video ->
                 val uri = Uri.parse(video.uri)
                 if (uri.scheme == "content" && Build.VERSION.SDK_INT >= 29)
                     runCatching { MediaStore.getVolumeName(uri) }.getOrNull() else null
-            } ?: if (key.startsWith("/") && !key.startsWith(Environment.getExternalStorageDirectory().absolutePath + "/") &&
+            } ?: if (key.startsWith("/") && key != primaryRoot && !key.startsWith(primaryRoot + "/") &&
                 key.startsWith("/storage/")) key.removePrefix("/storage/").substringBefore('/').lowercase(Locale.ROOT)
                 else if (key.contains(':') && !key.startsWith("/")) key.substringBefore(':') else primaryVolume()
-            val result = DiscoveryPipeline.folder(key,
+            val result = withContext(Dispatchers.Default) { DiscoveryPipeline.folder(key,
                 query = { scoped -> queryVolume(context.applicationContext, volume, scoped, volume != primaryVolume()) },
-                reconcile = { scoped, emit -> reconcile(context.applicationContext, true, scoped, ticket, emit) })
+                reconcile = { scoped, emit -> reconcile(context.applicationContext, true, scoped, ticket, emit) }) }
             ownership.publish(ticket) { cache = cache.filter { it.key != key } + listOfNotNull(result) }
             return result
         } finally { ownership.finish(ticket) }
@@ -91,6 +92,9 @@ object MediaLibrary {
     private suspend fun queryVolume(context: Context, volume: String, folderKey: String?, external: Boolean): List<MediaFolder> {
         val signal = CancellationSignal()
         val start = SystemClock.elapsedRealtime()
+        val record = OwlDiagnostics.storageRecorder()
+        val label = (if (external) "removable" else "primary") + (if (folderKey == null) " global" else " folder")
+        record(label + " query start")
         return try {
             val result = withTimeoutOrNull(PROVIDER_BUDGET_MS) {
                 (if (external) externalQueries else primaryQueries).query({ signal.cancel() }) {
@@ -99,9 +103,12 @@ object MediaLibrary {
             }
             Log.i("OwlMediaScan", "volume=" + volume + " ms=" + (SystemClock.elapsedRealtime() - start) +
                 " outcome=" + if (result == null) "timeout" else "ok")
+            record(label + " query " + (if (result == null) "timeout" else "ok") +
+                " elapsed=" + (SystemClock.elapsedRealtime() - start) + " folders=" + (result?.size ?: 0))
             result ?: emptyList()
-        } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+        } catch (cancel: kotlinx.coroutines.CancellationException) { record(label + " query cancelled"); throw cancel }
         catch (error: Exception) {
+            record(label + " query failed: " + error.javaClass.simpleName)
             Log.w("OwlMediaScan", "Skipping provider volume " + volume, error)
             emptyList()
         }
@@ -171,8 +178,13 @@ object MediaLibrary {
     private suspend fun reconcile(context: Context, force: Boolean, folderKey: String?, ticket: ScanOwnership.Ticket,
         emit: (List<MediaFolder>) -> Unit) {
         if (Build.VERSION.SDK_INT < 30 || BuildConfig.FLAVOR != "allstorage" || !Environment.isExternalStorageManager()) return
+        val record = OwlDiagnostics.storageRecorder()
         // Never wait behind a stuck listFiles call. Only actual traversals use this lock.
-        if (!traversal.tryLock()) { Log.i("OwlMediaScan", "Direct traversal busy; keeping provider results"); return }
+        if (!traversal.tryLock()) {
+            record("direct traversal busy; provider results retained")
+            return
+        }
+        record("direct " + (if (folderKey == null) "removable" else "folder") + " start")
         try { withContext(Dispatchers.IO) {
             val job = currentCoroutineContext()[Job]!!
             job.ensureActive()
@@ -207,7 +219,7 @@ object MediaLibrary {
                 } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
                 catch (error: Exception) { Log.w("OwlMediaScan", "Removable storage unavailable", error) }
             }
-        } } finally { traversal.unlock() }
+        } } finally { traversal.unlock(); record("direct traversal finished/cancelled") }
     }
 
     private fun walk(root: File, label: String, grouped: LinkedHashMap<String, MediaFolder>, job: Job,
