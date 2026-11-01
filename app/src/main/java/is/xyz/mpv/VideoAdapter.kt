@@ -43,7 +43,7 @@ class VideoAdapter(
     }
     private val selectedUris = linkedSetOf<String>()
 
-    fun cancelPending() { generation++; historyJob?.cancel() }
+    fun cancelPending() { generation++; historyJob?.cancel(); thumbnailsPaused = true }
 
     fun submit(videos: List<MediaVideo>) {
         val version = ++generation
@@ -56,6 +56,7 @@ class VideoAdapter(
     }
 
     private fun loadHistory(snapshot: List<MediaVideo>, version: Int) {
+        if (OwlSession.ending) return
         historyJob?.cancel()
         historyJob = scope.launch {
             val entries = withContext(Dispatchers.IO) {

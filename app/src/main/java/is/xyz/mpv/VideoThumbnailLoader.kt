@@ -65,6 +65,7 @@ object VideoThumbnailLoader {
     }
 
     @Synchronized fun load(target: ImageView, video: MediaVideo) {
+        if (OwlSession.ending) return
         val key = (video.path?.takeIf { it.isNotBlank() } ?: video.uri) +
             ":" + video.modifiedSeconds + ":" + video.sizeBytes
         val previous = target.tag as? Request

@@ -114,10 +114,15 @@ object MediaLibrary {
         }
     }
 
+    private fun checkQueryActive(signal: CancellationSignal) {
+        signal.throwIfCanceled()
+        if (Thread.currentThread().isInterrupted) throw android.os.OperationCanceledException()
+    }
+
     private fun queryBlocking(context: Context, volume: String, folderKey: String?, signal: CancellationSignal): List<MediaFolder> {
         val grouped = linkedMapOf<String, MediaFolder>()
         val indexedPaths = hashSetOf<String>()
-        signal.throwIfCanceled()
+        checkQueryActive(signal)
         val collection = if (Build.VERSION.SDK_INT >= 29) MediaStore.Video.Media.getContentUri(volume)
             else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
         val projection = listOf(MediaStore.Video.Media._ID, MediaStore.Video.Media.DISPLAY_NAME,
@@ -141,7 +146,7 @@ object MediaLibrary {
                     val modifiedCol = cursor.getColumnIndex(MediaStore.Video.Media.DATE_MODIFIED)
 
                     while (cursor.moveToNext()) {
-                        signal.throwIfCanceled()
+                        checkQueryActive(signal)
                         val id = if (idCol >= 0) cursor.getLong(idCol) else continue
                         val title = if (nameCol >= 0) cursor.getString(nameCol) ?: "Video" else "Video"
                         val path = if (dataCol >= 0) cursor.getString(dataCol) else null
@@ -171,7 +176,7 @@ object MediaLibrary {
                         ), indexedPaths)
                     }
         }
-        signal.throwIfCanceled()
+        checkQueryActive(signal)
         return MediaRules.snapshot(grouped)
     }
 

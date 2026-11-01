@@ -245,7 +245,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
 
     private fun performVideoDelete(selected: List<MediaVideo>) {
         Toast.makeText(this, "완전 삭제 중…", Toast.LENGTH_SHORT).show()
-        if (fileJob?.isActive == true) return
+        if (OwlSession.ending || isFinishing || isDestroyed || fileJob?.isActive == true) return
         fileJob = lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 val job = currentCoroutineContext()[Job]!!
@@ -277,7 +277,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
 
     private fun performVideoMove(selected: List<MediaVideo>, destination: File) {
         Toast.makeText(this, "이동 중…", Toast.LENGTH_SHORT).show()
-        if (fileJob?.isActive == true) return
+        if (OwlSession.ending || isFinishing || isDestroyed || fileJob?.isActive == true) return
         fileJob = lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 val job = currentCoroutineContext()[Job]!!

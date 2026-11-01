@@ -84,7 +84,7 @@ object OwlDiagnostics {
         }
         owner.lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
-                if (!enabled(activity)) return
+                if (OwlSession.ending || !enabled(activity)) return
                 active = true
                 stoppers.add(stop)
                 recycler?.addOnScrollListener(scrollListener)
