@@ -5,7 +5,7 @@ cd "$( dirname "${BASH_SOURCE[0]}" )/.."
 
 . ./include/depinfo.sh
 
-v_ci_archs="armv7l arm64"
+v_ci_archs="${OWL_NATIVE_ARCHS:-armv7l arm64}"
 
 msg() {
 	printf '==> %s\n' "$1"
@@ -64,9 +64,10 @@ elif [ "$1" = "install" ]; then
 
 	msg "Fetching mpv"
 	mkdir -p deps/mpv
-	$WGET https://github.com/mpv-player/mpv/archive/master.tar.gz -O master.tgz
-	tar -xzf master.tgz -C deps/mpv --strip-components=1
-	rm master.tgz
+	git -C deps/mpv init
+	git -C deps/mpv remote add origin https://github.com/mpv-player/mpv
+	git -C deps/mpv fetch origin "$rev_mpv" --depth=1
+	git -C deps/mpv checkout --detach "$rev_mpv"
 
 	msg "Trying to fetch existing prefix"
 	mkdir -p prefix

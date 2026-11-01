@@ -15,18 +15,28 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import java.io.File
 import java.util.Locale
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.isActive
 import kotlin.concurrent.thread
 
 class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     private lateinit var recycler: RecyclerView
     private lateinit var emptyText: TextView
     private lateinit var swipeRefresh: SwipeRefreshLayout
-    private val adapter = VideoAdapter(::playVideo, ::onVideoSelectionChanged)
+    private val adapter = VideoAdapter(this, lifecycleScope, ::playVideo, ::onVideoSelectionChanged)
     private lateinit var folderKey: String
     private var currentVideos: List<MediaVideo> = emptyList()
     private var displayedVideos: List<MediaVideo> = emptyList()
     private var sortMode = SORT_NAME
+    private var scanJob: Job? = null
+    private var launchJob: Job? = null
+    private var scanInterrupted = false
     private var activeVideo: MediaVideo? = null
+    private var activePlaylist: List<MediaVideo> = emptyList()
     private var pendingMoveVideos: List<MediaVideo> = emptyList()
 
     private val playerLauncher = registerForActivityResult(
@@ -36,7 +46,8 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
         activeVideo = null
         if (result.data != null) {
             val playedIndex = result.data!!.getIntExtra("playlist_index", -1)
-            val video = displayedVideos.getOrNull(playedIndex) ?: fallbackVideo
+            val video = activePlaylist.getOrNull(playedIndex) ?: fallbackVideo
+            activePlaylist = emptyList()
             val position = result.data!!.getIntExtra("position", -1)
             val duration = result.data!!.getIntExtra("duration", -1)
             if (video != null && position >= 0) {
@@ -88,6 +99,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
         swipeRefresh = findViewById(R.id.folderSwipeRefresh)
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = adapter
+        OwlDiagnostics.attach(this, this, recycler)
         swipeRefresh.setOnRefreshListener { rescanFolder(showLoadingText = false) }
 
         onBackPressedDispatcher.addCallback(this) {
@@ -118,38 +130,42 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     }
 
     private fun rescanFolder(showLoadingText: Boolean = true) {
+        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
+            scanInterrupted = true
+            return
+        }
         if (showLoadingText) {
             emptyText.visibility = View.VISIBLE
             emptyText.text = "영상을 불러오는 중…"
         }
-        thread(name = "OwlFolderScan") {
-            val folder = MediaLibrary.scan(this).firstOrNull { it.key == folderKey }
-            runOnUiThread {
+        scanJob?.cancel()
+        scanJob = lifecycleScope.launch {
+            try {
+                val folder = MediaLibrary.refreshFolder(applicationContext, folderKey)
                 currentVideos = folder?.videos ?: emptyList()
                 applySort()
                 emptyText.visibility = if (currentVideos.isEmpty()) View.VISIBLE else View.GONE
                 if (currentVideos.isEmpty()) emptyText.text = "영상이 없습니다."
-                swipeRefresh.isRefreshing = false
-            }
+            } finally { if (coroutineContext[Job] === scanJob) swipeRefresh.isRefreshing = false }
         }
     }
 
+    override fun onStop() {
+        adapter.pauseThumbnails(recycler, true)
+        scanInterrupted = scanInterrupted || scanJob?.isActive == true
+        scanJob?.cancel()
+        launchJob?.cancel()
+        super.onStop()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        adapter.pauseThumbnails(recycler, false)
+        if (scanInterrupted) { scanInterrupted = false; rescanFolder(false) }
+    }
+
     private fun applySort() {
-        displayedVideos = when (sortMode) {
-            SORT_RECENT -> currentVideos.sortedWith(
-                compareByDescending<MediaVideo> { it.modifiedSeconds }
-                    .thenBy { it.title.lowercase(Locale.getDefault()) }
-            )
-            SORT_DURATION -> currentVideos.sortedWith(
-                compareByDescending<MediaVideo> { it.durationMs }
-                    .thenBy { it.title.lowercase(Locale.getDefault()) }
-            )
-            SORT_SIZE -> currentVideos.sortedWith(
-                compareByDescending<MediaVideo> { it.sizeBytes }
-                    .thenBy { it.title.lowercase(Locale.getDefault()) }
-            )
-            else -> currentVideos.sortedBy { it.title.lowercase(Locale.getDefault()) }
-        }
+        displayedVideos = MediaRules.sortVideos(currentVideos, sortMode)
         adapter.submit(displayedVideos)
     }
 
@@ -182,24 +198,27 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     }
 
     private fun playVideo(video: MediaVideo, resume: Boolean) {
-        activeVideo = video
-        val startIndex = displayedVideos.indexOfFirst { it.uri == video.uri }.coerceAtLeast(0)
-        val history = if (resume && ApvSettingsActivity.isResumeEnabled(this)) {
-            PlaybackHistory.get(this, video)
-        } else null
-
-        val playlistEntries = displayedVideos.map { media ->
-            media.path?.takeIf { it.isNotBlank() } ?: media.uri
+        if (launchJob?.isActive == true) return
+        val snapshot = displayedVideos.toList()
+        scanJob?.cancel()
+        launchJob = lifecycleScope.launch {
+            val prepared = withContext(Dispatchers.Default) {
+                val startIndex = snapshot.indexOfFirst { it.uri == video.uri }.coerceAtLeast(0)
+                val memoryPlaylist = Utils.makeMemoryPlaylist(snapshot.map { it.path?.takeIf { p -> p.isNotBlank() } ?: it.uri })
+                startIndex to memoryPlaylist
+            }
+            val history = withContext(Dispatchers.IO) {
+                if (resume && ApvSettingsActivity.isResumeEnabled(this@FolderActivity))
+                    PlaybackHistory.get(this@FolderActivity, video) else null
+            }
+            activeVideo = video
+            activePlaylist = snapshot
+            OwlLaunchState.playlistStartIndex = prepared.first
+            OwlLaunchState.resumePositionMs = history?.positionMs ?: -1L
+            playerLauncher.launch(Intent(this@FolderActivity, MPVActivity::class.java).apply {
+                putExtra("filepath", prepared.second)
+            })
         }
-        val memoryPlaylist = Utils.makeMemoryPlaylist(playlistEntries)
-
-        OwlLaunchState.playlistStartIndex = startIndex
-        OwlLaunchState.resumePositionMs = history?.positionMs ?: -1L
-
-        val playerIntent = Intent(this, MPVActivity::class.java).apply {
-            putExtra("filepath", memoryPlaylist)
-        }
-        playerLauncher.launch(playerIntent)
     }
 
     private fun confirmDeleteSelectedVideos() {
@@ -219,6 +238,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
             val result = OwlFileOperations.deleteVideos(this, selected)
             selected.forEach { PlaybackHistory.clear(this, it) }
             runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
                 adapter.clearSelection()
                 showOperationResult("삭제", result)
                 rescanFolder()
@@ -246,6 +266,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
             val result = OwlFileOperations.moveVideos(this, selected, destination)
             selected.forEach { PlaybackHistory.clear(this, it) }
             runOnUiThread {
+                if (isDestroyed || isFinishing) return@runOnUiThread
                 adapter.clearSelection()
                 showOperationResult("이동", result)
                 rescanFolder()

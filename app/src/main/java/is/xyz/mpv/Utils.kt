@@ -84,13 +84,17 @@ internal object Utils {
             "</fontconfig>"
         )
         try {
-            configFile.writeText(parts.joinToString("\n"))
+            val content = parts.joinToString("\n")
+            if (!configFile.exists() || configFile.readText() != content) configFile.writeText(content)
         } catch (e: IOException) {
             Log.w(TAG, "Failed to write fonts.conf", e)
         }
     }
 
-    fun copyAssets(context: Context) {
+    private var assetsPrepared = false
+
+    @Synchronized fun copyAssets(context: Context) {
+        if (assetsPrepared) return
         val assetManager = context.assets
         val files = arrayOf("cacert.pem")
         val configDir = context.filesDir.path
@@ -103,6 +107,7 @@ internal object Utils {
         File("$configDir/subfont.ttf").delete()
 
         writeFontsConf(context, File("$configDir/fonts.conf"))
+        assetsPrepared = File("$configDir/cacert.pem").isFile && File("$configDir/fonts.conf").isFile
     }
 
     fun findRealPath(fd: Int): String? {
@@ -251,20 +256,7 @@ internal object Utils {
     /**
      * Constructs a memory:// URL with an M3U playlist from the given entries
      */
-    fun makeMemoryPlaylist(entries: Iterable<String>): String {
-        val lines = mutableListOf("memory://#EXTM3U")
-        val badChars = listOf("\r", "\n", "\u0000")
-        for (entry in entries) {
-            if (entry.isEmpty())
-                continue
-            if (entry.startsWith("#"))
-                throw IllegalArgumentException("Playlist entry cannot start with #")
-            if (entry.findAnyOf(badChars) != null)
-                throw IllegalArgumentException("Playlist entry contains illegal character")
-            lines += entry
-        }
-        return lines.joinToString("\n", "", "\n")
-    }
+    fun makeMemoryPlaylist(entries: Iterable<String>): String = MediaRules.playlist(entries)
 
     class AudioMetadata {
         var mediaTitle: String? = null

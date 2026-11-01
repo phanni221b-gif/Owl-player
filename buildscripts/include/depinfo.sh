@@ -1,5 +1,7 @@
 #!/bin/bash -e
 
+. "$(dirname "${BASH_SOURCE[0]}")/native-revisions.sh"
+
 ## Dependency versions
 # Make sure to keep v_ndk and v_ndk_n in sync, both are listed on the NDK download page
 
@@ -46,3 +48,9 @@ v_ci_ffmpeg=n9.0.2
 
 # filename used to uniquely identify a build prefix
 ci_tarball="prefix-n${v_ndk}-l${v_lua}-u${v_unibreak}-h${v_harfbuzz}-fr${v_fribidi}-ft${v_freetype}-x${v_libxml2}-fo${v_fontconfig}-m${v_mbedtls}-c${v_curl}-ff${v_ci_ffmpeg}.tgz"
+
+# Invalidate native caches whenever the complete source lock changes.
+ci_tarball="${ci_tarball%.tgz}-$(sha256sum "$(dirname "${BASH_SOURCE[0]}")/native-revisions.sh" | cut -c1-16).tgz"
+
+# Architecture is part of cache identity; the release job builds only its published ABI.
+ci_tarball="${ci_tarball%.tgz}-a${OWL_NATIVE_ARCHS:-armv7l_arm64}.tgz"

@@ -7,45 +7,91 @@ import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.ListAdapter
+import androidx.recyclerview.widget.DiffUtil
+import android.content.Context
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
 import java.util.Locale
 
 class VideoAdapter(
+    private val context: Context,
+    private val scope: CoroutineScope,
     private val onClick: (MediaVideo) -> Unit,
     private val onSelectionChanged: (Int) -> Unit
-) : RecyclerView.Adapter<VideoAdapter.Holder>() {
-    private var items: List<MediaVideo> = emptyList()
+) : ListAdapter<MediaVideo, VideoAdapter.Holder>(object : DiffUtil.ItemCallback<MediaVideo>() {
+    override fun areItemsTheSame(a: MediaVideo, b: MediaVideo) = identity(a) == identity(b)
+    override fun areContentsTheSame(a: MediaVideo, b: MediaVideo) = a == b
+}) {
+    private val items: List<MediaVideo> get() = currentList
+    private var history = emptyMap<String, PlaybackHistory.Entry?>()
+    private var generation = 0
+    private var historyJob: Job? = null
+    private var thumbnailsPaused = false
+    fun pauseThumbnails(recycler: RecyclerView, paused: Boolean) {
+        thumbnailsPaused = paused
+        for (index in 0 until recycler.childCount) {
+            val holder = recycler.getChildViewHolder(recycler.getChildAt(index)) as? Holder ?: continue
+            if (paused) holder.cancelThumbnail()
+            else if (holder.bindingAdapterPosition != RecyclerView.NO_POSITION) holder.loadThumbnail(getItem(holder.bindingAdapterPosition))
+        }
+    }
     private val selectedUris = linkedSetOf<String>()
 
     fun submit(videos: List<MediaVideo>) {
-        items = videos
-        selectedUris.retainAll(videos.map { it.uri }.toSet())
-        notifyDataSetChanged()
-        onSelectionChanged(selectedUris.size)
+        val version = ++generation
+        val snapshot = videos.toList()
+        historyJob?.cancel()
+        historyJob = scope.launch {
+            val entries = withContext(Dispatchers.IO) { snapshot.associate { currentCoroutineContext().ensureActive(); identity(it) to PlaybackHistory.get(context, it) } }
+            if (version != generation) return@launch
+            history = entries
+            selectedUris.retainAll(snapshot.map { identity(it) }.toSet())
+            submitList(snapshot)
+            onSelectionChanged(selectedUris.size)
+        }
     }
 
-    fun refreshProgress() = notifyDataSetChanged()
+    fun refreshProgress() {
+        val snapshot = items.toList()
+        val version = generation
+        scope.launch {
+            val entries = withContext(Dispatchers.IO) { snapshot.associate { identity(it) to PlaybackHistory.get(context, it) } }
+            if (version != generation) return@launch
+            val changed = entries.filter { (key, value) -> history[key] != value }.keys
+            history = entries
+            items.forEachIndexed { index, video -> if (identity(video) in changed) notifyItemChanged(index, "progress") }
+        }
+    }
 
     fun isSelectionMode(): Boolean = selectedUris.isNotEmpty()
 
     fun selectedItems(): List<MediaVideo> =
-        items.filter { selectedUris.contains(it.uri) }
+        items.filter { selectedUris.contains(identity(it)) }
 
     fun clearSelection() {
         if (selectedUris.isEmpty()) return
+        val changed = selectedUris.toSet()
         selectedUris.clear()
-        notifyDataSetChanged()
+        updateSelection(changed)
         onSelectionChanged(0)
     }
 
     fun selectAll() {
-        selectedUris.addAll(items.map { it.uri })
-        notifyDataSetChanged()
+        val changed = items.map { identity(it) }.filterNot { it in selectedUris }.toSet()
+        selectedUris.addAll(changed)
+        updateSelection(changed)
         onSelectionChanged(selectedUris.size)
     }
 
     private fun toggleSelection(item: MediaVideo) {
-        if (!selectedUris.add(item.uri)) selectedUris.remove(item.uri)
-        notifyDataSetChanged()
+        if (!selectedUris.add(identity(item))) selectedUris.remove(identity(item))
+        updateSelection(setOf(identity(item)))
         onSelectionChanged(selectedUris.size)
     }
 
@@ -53,7 +99,26 @@ class VideoAdapter(
         return Holder(LayoutInflater.from(parent.context).inflate(R.layout.item_video, parent, false))
     }
 
-    override fun getItemCount(): Int = items.size
+    private fun updateSelection(keys: Set<String>) {
+        items.forEachIndexed { index, item -> if (identity(item) in keys) notifyItemChanged(index, "selection") }
+    }
+
+    override fun onBindViewHolder(holder: Holder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.isEmpty()) super.onBindViewHolder(holder, position, payloads)
+        else {
+            val item = getItem(position)
+            holder.itemView.isActivated = identity(item) in selectedUris
+            if ("progress" in payloads) holder.bindProgress(item)
+        }
+    }
+
+    override fun onViewRecycled(holder: Holder) { holder.cancelThumbnail(); super.onViewRecycled(holder) }
+    override fun onViewDetachedFromWindow(holder: Holder) { holder.cancelThumbnail(); super.onViewDetachedFromWindow(holder) }
+    override fun onViewAttachedToWindow(holder: Holder) {
+        super.onViewAttachedToWindow(holder)
+        val index = holder.bindingAdapterPosition
+        if (index != RecyclerView.NO_POSITION) holder.loadThumbnail(getItem(index))
+    }
 
     override fun onBindViewHolder(holder: Holder, position: Int) = holder.bind(items[position])
 
@@ -64,16 +129,10 @@ class VideoAdapter(
         private val meta: TextView = view.findViewById(R.id.videoMeta)
         private val resume: TextView = view.findViewById(R.id.videoResume)
 
-        fun bind(item: MediaVideo) {
-            title.text = item.title
-            val duration = formatDuration(item.durationMs)
-            val resolution = formatResolution(item.width, item.height)
-            val size = formatSize(item.sizeBytes)
-            meta.text = listOf(duration, resolution, size).filter { it.isNotBlank() }.joinToString("  ·  ")
-
-            VideoThumbnailLoader.load(thumbnail, item)
-
-            val history = PlaybackHistory.get(itemView.context, item)
+        fun cancelThumbnail() = VideoThumbnailLoader.cancel(thumbnail)
+        fun loadThumbnail(item: MediaVideo) { if (!thumbnailsPaused) VideoThumbnailLoader.load(thumbnail, item) }
+        fun bindProgress(item: MediaVideo) {
+            val history = history[identity(item)]
             if (history != null) {
                 progress.visibility = View.VISIBLE
                 progress.progress = history.progress
@@ -86,7 +145,20 @@ class VideoAdapter(
                 resume.text = ""
             }
 
-            itemView.isActivated = selectedUris.contains(item.uri)
+        }
+
+        fun bind(item: MediaVideo) {
+            title.text = item.title
+            val duration = formatDuration(item.durationMs)
+            val resolution = formatResolution(item.width, item.height)
+            val size = formatSize(item.sizeBytes)
+            meta.text = listOf(duration, resolution, size).filter { it.isNotBlank() }.joinToString("  ·  ")
+
+            loadThumbnail(item)
+
+            bindProgress(item)
+
+            itemView.isActivated = selectedUris.contains(identity(item))
             itemView.setOnClickListener {
                 if (isSelectionMode()) toggleSelection(item) else onClick(item)
             }
@@ -95,6 +167,10 @@ class VideoAdapter(
                 true
             }
         }
+    }
+
+    companion object {
+        fun identity(video: MediaVideo): String = MediaRules.identity(video)
     }
 
     private fun formatResolution(width: Int, height: Int): String {

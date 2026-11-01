@@ -2,8 +2,8 @@ name: Release Owl
 
 on:
   push:
-    paths:
-      - '.github/workflows/release-apv.yml'
+    branches: [main, "maintenance/**"]
+    tags: ["v0.5.0"]
   workflow_dispatch:
 
 permissions:
@@ -12,6 +12,12 @@ permissions:
 jobs:
   build-release:
     runs-on: ubuntu-24.04
+    env:
+      OWL_NATIVE_ARCHS: arm64
+      OWL_KEYSTORE_PATH: ${{ github.workspace }}/../owl-release.p12
+      OWL_STORE_PASSWORD: ${{ secrets.OWL_STORE_PASSWORD }}
+      OWL_KEY_PASSWORD: ${{ secrets.OWL_KEY_PASSWORD }}
+      OWL_KEY_ALIAS: ${{ secrets.OWL_KEY_ALIAS }}
     steps:
       - uses: actions/checkout@v7
 
@@ -24,6 +30,7 @@ jobs:
         run: buildscripts/include/ci.sh export >> $GITHUB_ENV
 
       - uses: actions/cache@v6
+        id: native-cache
         with:
           path: gh-cache/
           key: "${{ env.CACHE_IDENTIFIER }}"
@@ -34,28 +41,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y autoconf pkgconf libtool ninja-build python3-pip gperf nasm
           sudo pip3 install meson pillow --break-system-packages
-
-      - name: Verify Owl 0.4.1 source state
-        run: |
-          grep -q 'versionCode 62' app/build.gradle
-          grep -q 'versionName "0.4.1"' app/build.gradle
-          grep -q 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0' app/build.gradle
-          grep -q 'storeFile file(System.getProperty("user.home") + "/.android/debug.keystore")' app/build.gradle
-          grep -q 'mainSwipeRefresh' app/src/main/java/is/xyz/mpv/MainActivity.kt
-          grep -q 'folderSwipeRefresh' app/src/main/java/is/xyz/mpv/FolderActivity.kt
-          grep -q 'addDirectExternalVolumes' app/src/main/java/is/xyz/mpv/MediaLibrary.kt
-          grep -q 'storageVolumes' app/src/main/java/is/xyz/mpv/MediaLibrary.kt
-          test ! -e app/src/main/java/is/xyz/mpv/MainScreenFragment.kt
-          test ! -e app/src/main/res/layout/fragment_main_screen.xml
-          grep -q 'R.id.cycleSubsBtn, R.id.prevBtn' app/src/main/java/is/xyz/mpv/MPVActivity.kt
-          ! grep -q 'viewGroupMove(seekbarGroup, R.id.prevBtn' app/src/main/java/is/xyz/mpv/MPVActivity.kt
-          ! grep -q 'viewGroupMove(buttonGroup, R.id.prevBtn' app/src/main/java/is/xyz/mpv/MPVActivity.kt
-          grep -q 'if (plCount <= 1)' app/src/main/java/is/xyz/mpv/MPVActivity.kt
-          grep -q 'val playlistEntries = displayedVideos.map' app/src/main/java/is/xyz/mpv/FolderActivity.kt
-          grep -q 'Utils.makeMemoryPlaylist(playlistEntries)' app/src/main/java/is/xyz/mpv/FolderActivity.kt
-          grep -q 'videoAutoRotate' app/src/main/res/layout/activity_apv_settings.xml
-          grep -q 'screenModeBtn' app/src/main/res/layout/player.xml
-          grep -q 'deleteRecursively' app/src/main/java/is/xyz/mpv/OwlFileOperations.kt
 
       - name: Verify protected playback core baseline
         run: |
@@ -85,13 +70,13 @@ jobs:
           EOF
           sha256sum -c /tmp/owl-protected-core.sha256
 
-      - name: Restore stable Owl development signing key
+      - name: Restore private Owl release key
+        env:
+          KEYSTORE_B64: ${{ secrets.OWL_RELEASE_KEYSTORE_B64 }}
         run: |
-          mkdir -p "$HOME/.android"
-          base64 -d .github/owl-signing/debug-keystore.b64 > "$HOME/.android/debug.keystore"
-          echo '27809b3ba39dc05131743472fc76a69b1ced9c36b97dd658eabecdbdb4df6bf7  '$HOME'/.android/debug.keystore' | sha256sum -c -
-          keytool -list -keystore "$HOME/.android/debug.keystore" -storepass android -alias androiddebugkey >/dev/null
-          chmod 600 "$HOME/.android/debug.keystore"
+          test -n "$KEYSTORE_B64"
+          printf "%s" "$KEYSTORE_B64" | base64 -d > "$OWL_KEYSTORE_PATH"
+          chmod 600 "$OWL_KEYSTORE_PATH"
 
       - name: Restore verified Owl PNG and create standard mipmaps
         run: |
@@ -125,10 +110,14 @@ jobs:
               out.parent.mkdir(parents=True, exist_ok=True)
               master.resize((size, size), Image.Resampling.LANCZOS).save(out, 'PNG', optimize=True)
           PY
+          cp /tmp/owl_launcher_icon.png app/src/main/res/drawable-nodpi/owl_launcher_source.png
           rm -f app/src/main/res/mipmap-anydpi-v26/owl_launcher_icon.xml
           rm -f app/src/main/res/mipmap-anydpi-v26/owl_launcher_foreground.xml
           rm -f app/src/main/res/mipmap-xxxhdpi/owl_launcher_art.webp
           rm -f app/src/main/res/mipmap-xxxhdpi/owl_launcher_icon.webp
+
+      - name: Unit tests and lint
+        run: ./gradlew testAllstorageDebugUnitTest lintAllstorageRelease
 
       - name: Download or build native dependencies
         run: |
@@ -138,55 +127,62 @@ jobs:
           CACHE_MODE: folder
           CACHE_FOLDER: "${{ github.workspace }}/gh-cache"
 
-      - name: Build Owl APKs
-        run: DONT_BUILD_RELEASE=1 buildscripts/include/ci.sh build
+      - name: Preserve verified native dependency cache
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6
+        with:
+          path: gh-cache/
+          key: "${{ env.CACHE_IDENTIFIER }}"
 
-      - name: Verify final APK and stable signature
+      - name: Create disposable CI debug key for internal test variants
         run: |
-          APK=app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk
-          test -f "$APK"
+          mkdir -p "$HOME/.android"
+          if [ ! -f "$HOME/.android/debug.keystore" ]; then
+            keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 2 -dname "CN=CI Debug"
+          fi
+
+      - name: Build Owl APKs
+        run: buildscripts/include/ci.sh build
+
+      - name: Verify release artifact
+        run: |
+          APK=app/build/outputs/apk/allstorage/release/app-allstorage-arm64-v8a-release.apk
           AAPT=$(find "$ANDROID_HOME/build-tools" -name aapt | sort -V | tail -1)
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -1)
-          "$AAPT" dump badging "$APK" > /tmp/owl-badging.txt
-          grep -q "application-label:'Owl'" /tmp/owl-badging.txt
-          grep -q "launchable-activity: name='is.xyz.mpv.MainActivity'" /tmp/owl-badging.txt
-          grep -Eq "application-icon-[0-9]+:'res/mipmap-[^']*/owl_launcher_icon\.png'" /tmp/owl-badging.txt
+          "$AAPT" dump badging "$APK" > /tmp/badging.txt
+          grep -q "package: name='com.phanni221b.owlplayer' versionCode='2063' versionName='0.5.0-allstorage'" /tmp/badging.txt
+          ! grep -q 'application-debuggable' /tmp/badging.txt
+          grep -q "native-code: 'arm64-v8a'" /tmp/badging.txt
+          grep -q "application-label:'Owl'" /tmp/badging.txt
+          grep -q "launchable-activity: name='is.xyz.mpv.MainActivity'" /tmp/badging.txt
+          "$APKSIGNER" verify --print-certs "$APK" > signing.txt
+          EXPECTED=$(cat .github/owl-signing/release-cert.sha256)
+          ACTUAL=$(awk '/certificate SHA-256 digest:/ {print $NF; exit}' signing.txt)
+          test "$ACTUAL" = "$EXPECTED"
+          cp "$APK" Owl-0.5.0-arm64.apk
+          sha256sum Owl-0.5.0-arm64.apk > Owl-0.5.0-arm64.sha256
+          cp buildscripts/include/native-revisions.sh native-revisions.txt
+          printf 'commit=%s\nvariant=allstorageRelease\napplicationId=com.phanni221b.owlplayer\n' "$GITHUB_SHA" > build-info.txt
+          cat native-revisions.txt signing.txt >> build-info.txt
+          bash -c '. buildscripts/include/depinfo.sh; set | grep -E "^(v_|rev_)"' >> build-info.txt
 
-          keytool -exportcert \
-            -keystore "$HOME/.android/debug.keystore" \
-            -storepass android \
-            -alias androiddebugkey \
-            -file /tmp/owl-cert.der
-          EXPECTED_CERT=$(sha256sum /tmp/owl-cert.der | awk '{print $1}')
-          "$APKSIGNER" verify --print-certs "$APK" | tee /tmp/owl-signing.txt
-          ACTUAL_CERT=$(awk '/certificate SHA-256 digest:/ {print $NF; exit}' /tmp/owl-signing.txt | tr '[:upper:]' '[:lower:]' | tr -d ':[:space:]')
-          test -n "$ACTUAL_CERT"
-          test "$ACTUAL_CERT" = "$EXPECTED_CERT"
-
-      - name: Prepare Owl arm64 APK
-        run: |
-          cp app/build/outputs/apk/allstorage/debug/app-allstorage-arm64-v8a-debug.apk Owl-0.4.1-arm64.apk
-          sha256sum Owl-0.4.1-arm64.apk > Owl-0.4.1-arm64.sha256
-
-      - name: Preserve Owl 0.4.1 APK artifact
-        uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v4
         with:
-          name: Owl-0.4.1-arm64
+          name: Owl-0.5.0-arm64-release
           path: |
-            Owl-0.4.1-arm64.apk
-            Owl-0.4.1-arm64.sha256
-          if-no-files-found: error
-          retention-days: 30
+            Owl-0.5.0-arm64.apk
+            Owl-0.5.0-arm64.sha256
+            build-info.txt
+            native-revisions.txt
+            app/build/reports/
 
       - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release delete v0.4.1 --yes 2>/dev/null || true
-          git push origin :refs/tags/v0.4.1 2>/dev/null || true
-          gh release create v0.4.1 \
-            Owl-0.4.1-arm64.apk \
-            Owl-0.4.1-arm64.sha256 \
-            --target "$GITHUB_SHA" \
-            --title "Owl 0.4.1" \
-            --notes "External-storage update. Owl now falls back to direct discovery of a mounted removable drive when Samsung/Android MediaStore fails to index it, while avoiding a full SSD crawl when MediaStore already sees the drive. Pull-to-refresh is available on the home folder grid and inside folders. Directly discovered videos also support thumbnails. The protected mpv playback core, JNI, FFmpeg, libass, libplacebo, HW decoding, subtitles and scaling remain unchanged."
+        run: gh release create v0.5.0 Owl-0.5.0-arm64.apk Owl-0.5.0-arm64.sha256 build-info.txt native-revisions.txt --verify-tag --title "Owl 0.5.0" --notes-file docs/release-0.5.0.md
+
+      - name: Remove temporary signing key
+        if: always()
+        run: rm -f "$OWL_KEYSTORE_PATH"
+
