@@ -51,3 +51,6 @@ ci_tarball="prefix-n${v_ndk}-l${v_lua}-u${v_unibreak}-h${v_harfbuzz}-fr${v_fribi
 
 # Invalidate native caches whenever the complete source lock changes.
 ci_tarball="${ci_tarball%.tgz}-$(sha256sum "$(dirname "${BASH_SOURCE[0]}")/native-revisions.sh" | cut -c1-16).tgz"
+
+# Architecture is part of cache identity; the release job builds only its published ABI.
+ci_tarball="${ci_tarball%.tgz}-a${OWL_NATIVE_ARCHS:-armv7l_arm64}.tgz"

@@ -13,6 +13,7 @@ jobs:
   build-release:
     runs-on: ubuntu-24.04
     env:
+      OWL_NATIVE_ARCHS: arm64
       OWL_KEYSTORE_PATH: ${{ github.workspace }}/../owl-release.p12
       OWL_STORE_PASSWORD: ${{ secrets.OWL_STORE_PASSWORD }}
       OWL_KEY_PASSWORD: ${{ secrets.OWL_KEY_PASSWORD }}
@@ -115,6 +116,9 @@ jobs:
           rm -f app/src/main/res/mipmap-xxxhdpi/owl_launcher_art.webp
           rm -f app/src/main/res/mipmap-xxxhdpi/owl_launcher_icon.webp
 
+      - name: Unit tests and lint
+        run: ./gradlew testAllstorageDebugUnitTest lintAllstorageRelease
+
       - name: Download or build native dependencies
         run: |
           mkdir -p "$CACHE_FOLDER"
@@ -130,11 +134,13 @@ jobs:
           path: gh-cache/
           key: "${{ env.CACHE_IDENTIFIER }}"
 
+      - name: Create disposable CI debug key for internal test variants
+        run: |
+          mkdir -p "$HOME/.android"
+          keytool -genkeypair -keystore "$HOME/.android/debug.keystore" -storepass android -keypass android -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 2 -dname "CN=CI Debug"
+
       - name: Build Owl APKs
         run: buildscripts/include/ci.sh build
-
-      - name: Unit tests and lint
-        run: ./gradlew testAllstorageDebugUnitTest lintAllstorageRelease
 
       - name: Verify release artifact
         run: |
