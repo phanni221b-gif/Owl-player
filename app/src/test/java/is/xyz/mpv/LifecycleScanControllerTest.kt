@@ -76,6 +76,19 @@ class LifecycleScanControllerTest {
         a.gates[1].complete(listOf("content")); drain()
         c.pause().stop().destroy()
     }
+    @Test fun sourceBoundarySettingsSnapshotReflectsNewNeuralAndMaxPreferences() {
+        val context = org.robolectric.RuntimeEnvironment.getApplication()
+        val prefs = android.preference.PreferenceManager.getDefaultSharedPreferences(context)
+        prefs.edit().clear().putString("apv_upscale_mode","sharp").apply()
+        val before = QualityPreferences.read(context)
+        assertEquals(QualityMode.SHARP,before.base); assertTrue(before.aiMax.isEmpty())
+        prefs.edit().putBoolean(QualityPreferences.AI_ENABLED,true)
+            .putStringSet(QualityPreferences.AI_BUCKETS,setOf("SD")).apply()
+        val after = QualityPreferences.read(context)
+        assertEquals(QualityMode.SHARP,after.base)
+        assertEquals(QualityMode.AI_MAX,after.candidates(SourceVideo(854,480,24.0,false,"h264")).first())
+        assertTrue(before.aiMax.isEmpty()) // old immutable snapshot cannot change under an active source
+    }
     @Test fun emergencyBalancedDoesNotInheritFailedUltraScalerPreferences() {
         val prefs = org.robolectric.RuntimeEnvironment.getApplication().getSharedPreferences("quality-test",0)
         prefs.edit().putString("video_scale","ewa_lanczossharp").putString("video_downscale","mitchell")

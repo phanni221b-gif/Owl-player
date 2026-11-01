@@ -13,6 +13,7 @@
 // You should have received a copy of the GNU Lesser General Public
 // License along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
+// Modified by Owl Player contributors, 2026-11-02.
 // Owl adaptation: MAIN RGB input/reconstruction for direct MediaCodec textures.
 // CNN coefficients and topology are unchanged. SDR only. See ATTRIBUTION.txt.
 

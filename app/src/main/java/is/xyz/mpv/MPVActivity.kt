@@ -315,7 +315,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         player.initialize(filesDir.path, cacheDir.path)
         playerInitialized = true
         OwlSession.playerReady = true
-        qualityController = QualityPlaybackController(applicationContext)
+        qualityController = QualityPlaybackController(applicationContext) { vo -> player.setVo(vo) }
         OwlDiagnostics.attach(this, this, playbackReady = { playerInitialized })
         applyScreenMode(screenMode, notify = false)
         player.playFile(filepath)

@@ -21,14 +21,16 @@ local function inspect()
     attempts = attempts + 1
     local passes = mp.get_property_native('vo-passes') or {}
     local fresh = passes.fresh or {}
+    local descriptions = {}
     local matched = MARKER == '' and #fresh > 0
     for _, pass in ipairs(fresh) do
+        table.insert(descriptions, tostring(pass.desc or ''))
         if string.find(pass.desc or '', MARKER, 1, true) then matched = true end
     end
     if matched then
         mp.commandv('screenshot-to-file', OUTPUT, 'video')
         local file = assert(io.open(RESULT, 'w'))
-        file:write(utils.format_json({fresh=fresh, version=mp.get_property('mpv-version'), hwdec=mp.get_property('hwdec-current')}))
+        file:write(utils.format_json({descriptions=descriptions, version=mp.get_property('mpv-version') or 'unknown', hwdec=mp.get_property('hwdec-current') or 'no'}))
         file:close()
         mp.commandv('quit', '0')
     elseif attempts > 80 then
@@ -39,12 +41,12 @@ end
 mp.register_event('file-loaded', function() mp.get_property_native('vo-passes'); mp.add_timeout(0.5, inspect) end)
 '''.replace('MARKER',json.dumps(marker)).replace('OUTPUT',json.dumps(str(output))).replace('RESULT',json.dumps(str(result))))
         cmd = ['mpv','--no-config','--vo=gpu-next','--gpu-api=opengl','--gpu-context=x11egl','--opengl-es=yes',
-            '--gpu-sw=yes','--hwdec=no','--no-audio','--loop-file=inf','--geometry=960x540','--scale=ewa_lanczossharp',
+            '--gpu-sw=yes','--term-status-msg=','--hwdec=no','--no-audio','--loop-file=inf','--geometry=960x540','--scale=ewa_lanczossharp',
             '--dscale=mitchell','--fbo-format=rgba16f','--script='+str(lua),'--log-file='+str(work/f'{channels}.log')]
         if channels: cmd.append('--glsl-shaders='+str(ASSETS/f'Owl-FSRCNNX-{channels}.glsl'))
         subprocess.run(cmd+[str(fixture)],check=True,timeout=90,env={**os.environ,'LIBGL_ALWAYS_SOFTWARE':'1'})
         data = json.loads(result.read_text())
-        descriptions = ' '.join(p.get('desc','') for p in data['fresh'])
+        descriptions = ' '.join(data['descriptions'])
         if channels:
             assert marker in descriptions
             assert f'Owl FSRCNNX {24-channels} RGB reconstruction' not in descriptions

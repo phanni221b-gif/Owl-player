@@ -15,10 +15,13 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
 
 /** One metadata decision per source, bounded render confirmation, and event-driven failure downgrade. */
-internal class QualityPlaybackController(context: Context) : MPVLib.EventObserver, MPVLib.LogObserver {
+internal class QualityPlaybackController(context: Context, private val selectRenderer: (String) -> Unit) : MPVLib.EventObserver, MPVLib.LogObserver {
     private val app = context.applicationContext
     private val prefs = PreferenceManager.getDefaultSharedPreferences(app)
-    private val configuration = QualityPreferences.read(app)
+    private var configuration = QualityPreferences.read(app)
+    private var managedQuality = configuration.needsGpuNext
+    private var preferredGpuNext = configuration.needsGpuNext || prefs.getBoolean("gpu_next", false)
+    private var rendererTransitionUntil = 0L
     private val handler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var metadataJob: Job? = null
@@ -41,10 +44,8 @@ internal class QualityPlaybackController(context: Context) : MPVLib.EventObserve
     }
     init {
         MPVLib.addObserver(this); MPVLib.addLogObserver(this)
-        if (configuration.neural.isNotEmpty() || configuration.aiMax.isNotEmpty()) {
-            MPVLib.observeProperty("osd-dimensions", MPVLib.MpvFormat.MPV_FORMAT_NONE)
-            MPVLib.observeProperty("video-zoom", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
-        }
+        MPVLib.observeProperty("osd-dimensions", MPVLib.MpvFormat.MPV_FORMAT_NONE)
+        MPVLib.observeProperty("video-zoom", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
     }
     override fun event(eventId: Int) {
         handler.post {
@@ -53,8 +54,17 @@ internal class QualityPlaybackController(context: Context) : MPVLib.EventObserve
                 MPVLib.MpvEvent.MPV_EVENT_START_FILE -> {
                     generation++; attemptNumber++; metadataJob?.cancel(); confirmation?.cancel(); handler.removeCallbacks(geometryCheck)
                     decided = false; deciding = false; source = null; fallback = null; attempted = null
+                    val previous = configuration
+                    configuration = QualityPreferences.read(app)
+                    managedQuality = managedQuality || configuration.needsGpuNext || configuration != previous
                     effective = configuration.base; shaderStatus = "not_requested"; renderer = null
-                    if (configuration.needsGpuNext) MPVLib.setOptionString("glsl-shaders", "")
+                    if (managedQuality) MPVLib.setOptionString("glsl-shaders", "")
+                    val wantGpuNext = configuration.needsGpuNext || prefs.getBoolean("gpu_next", false)
+                    if (wantGpuNext != preferredGpuNext) {
+                        selectRenderer(if (wantGpuNext) "gpu-next,gpu" else "gpu")
+                        preferredGpuNext = wantGpuNext
+                        rendererTransitionUntil = android.os.SystemClock.elapsedRealtime() + 1_000
+                    }
                     report()
                 }
                 MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED,
@@ -73,6 +83,8 @@ internal class QualityPlaybackController(context: Context) : MPVLib.EventObserve
             try {
                 repeat(20) {
                     if (closed || token != generation) return@launch
+                    if (android.os.SystemClock.elapsedRealtime() < rendererTransitionUntil &&
+                        MPVLib.getPropertyString("current-vo") != "gpu-next" && preferredGpuNext) { delay(100); return@repeat }
                     val width = MPVLib.getPropertyInt("video-params/w") ?: 0
                     val height = MPVLib.getPropertyInt("video-params/h") ?: 0
                     if (width > 0 && height > 0 && (!configuration.needsGpuNext || MPVLib.getPropertyString("current-vo") != null)) {
@@ -102,7 +114,7 @@ internal class QualityPlaybackController(context: Context) : MPVLib.EventObserve
             attempted = mode; attemptNumber++
             val attempt = attemptNumber
             confirmation?.cancel()
-            if (!configuration.needsGpuNext && mode == configuration.base) {
+            if (!managedQuality && mode == configuration.base) {
                 effective = mode; shaderStatus = "not_requested"; report(); return
             }
             MPVLib.setOptionString("glsl-shaders", "") // overwrite the list; never stack model shaders
@@ -153,6 +165,7 @@ internal class QualityPlaybackController(context: Context) : MPVLib.EventObserve
         }
     }
     private fun geometryChanged() {
+        if (configuration.neural.isEmpty() && configuration.aiMax.isEmpty()) return
         handler.removeCallbacks(geometryCheck)
         handler.postDelayed(geometryCheck, 450) // fold/rotation/zoom events, never video-frame callbacks
     }

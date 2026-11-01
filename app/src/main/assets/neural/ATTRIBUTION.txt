@@ -6,7 +6,10 @@ The repository's separate training-code licenses do not replace these shader hea
 Full LGPLv3 and GPLv3 texts are bundled as COPYING.LESSER and COPYING.
 
 Neural: FSRCNNX_x2_8-0-4-1; AI Max: FSRCNNX_x2_16-0-4-1. Both run on GPU, not NPU.
+Modified by Owl Player contributors, 2026-11-02.
 Owl modifications: MAIN-hook SDR RGB-to-luma extraction and RGB reconstruction allow direct MediaCodec RGB textures without CPU readback or decoder changes. CNN weights/topology are unchanged. Original and modified shader source, license headers and SHA-256 manifests are included in the APK and source repository. The modified shaders remain LGPL-3.0-or-later.
 
 The shaders run only when BOTH output axes exceed input by 1.3x. They are not used for HDR. The 16-channel model has greater capacity, not a measured guarantee of better quality for every clip. Fold device image quality, speed, heat and power need physical-device verification.
 No Qualcomm/QNN/NPU runtime is bundled or claimed.
+
+Corresponding original/modified shader source: https://github.com/phanni221b-gif/Owl-player/tree/v0.6.0/app/src/main/assets/neural
