@@ -8,6 +8,14 @@ android {
     compileSdk = 36
 
     signingConfigs {
+        release {
+            if (System.getenv("OWL_KEYSTORE_PATH")) {
+                storeFile file(System.getenv("OWL_KEYSTORE_PATH"))
+                storePassword System.getenv("OWL_STORE_PASSWORD")
+                keyAlias System.getenv("OWL_KEY_ALIAS")
+                keyPassword System.getenv("OWL_KEY_PASSWORD")
+            }
+        }
         getByName("debug") {
             storeFile file(System.getProperty("user.home") + "/.android/debug.keystore")
             storePassword "android"
@@ -17,11 +25,12 @@ android {
     }
 
     defaultConfig {
+        applicationId "com.phanni221b.owlplayer"
         minSdkVersion 23
         targetSdk 36
 
-        versionCode 62
-        versionName "0.4.1"
+        versionCode 63
+        versionName "0.5.0"
 
         vectorDrawables.useSupportLibrary = true
 
@@ -87,6 +96,9 @@ androidComponents {
 
 dependencies {
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.9.4'
+    implementation 'androidx.metrics:metrics-performance:1.0.0'
+    testImplementation 'junit:junit:4.13.2'
     implementation 'androidx.appcompat:appcompat:1.7.1'
     implementation 'androidx.recyclerview:recyclerview:1.4.0'
     implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'

@@ -86,3 +86,13 @@ fi
 [ ! -d mpv ] && git clone https://github.com/mpv-player/mpv
 
 cd ..
+
+# Always verify cached checkouts too. Never build an unpinned branch tip.
+for dep in mpv dav1d ffmpeg freetype2 libass libplacebo; do
+    revision_var="rev_${dep}"
+    revision="${!revision_var}"
+    git -C "deps/$dep" fetch origin "$revision" --depth=1
+    git -C "deps/$dep" checkout --detach "$revision"
+    test "$(git -C "deps/$dep" rev-parse HEAD)" = "$revision"
+    git -C "deps/$dep" submodule update --init --recursive
+done
