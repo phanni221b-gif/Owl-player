@@ -43,31 +43,33 @@ class VideoAdapter(
     }
     private val selectedUris = linkedSetOf<String>()
 
+    fun cancelPending() { generation++; historyJob?.cancel(); thumbnailsPaused = true }
+
     fun submit(videos: List<MediaVideo>) {
         val version = ++generation
         val snapshot = videos.toList()
         historyJob?.cancel()
-        historyJob = scope.launch {
-            val entries = withContext(Dispatchers.IO) { snapshot.associate { currentCoroutineContext().ensureActive(); identity(it) to PlaybackHistory.get(context, it) } }
-            if (version != generation) return@launch
-            history = entries
-            selectedUris.retainAll(snapshot.map { identity(it) }.toSet())
-            submitList(snapshot)
-            onSelectionChanged(selectedUris.size)
-        }
+        selectedUris.retainAll(snapshot.map { identity(it) }.toSet())
+        // Do not hold the list behind thousands of preference/history reads.
+        submitList(snapshot) { if (version == generation) loadHistory(snapshot, version) }
+        onSelectionChanged(selectedUris.size)
     }
 
-    fun refreshProgress() {
-        val snapshot = items.toList()
-        val version = generation
-        scope.launch {
-            val entries = withContext(Dispatchers.IO) { snapshot.associate { identity(it) to PlaybackHistory.get(context, it) } }
+    private fun loadHistory(snapshot: List<MediaVideo>, version: Int) {
+        if (OwlSession.ending) return
+        historyJob?.cancel()
+        historyJob = scope.launch {
+            val entries = withContext(Dispatchers.IO) {
+                snapshot.associate { currentCoroutineContext().ensureActive(); identity(it) to PlaybackHistory.get(context, it) }
+            }
             if (version != generation) return@launch
-            val changed = entries.filter { (key, value) -> history[key] != value }.keys
+            val changed = (history.keys + entries.keys).filter { history[it] != entries[it] }.toSet()
             history = entries
             items.forEachIndexed { index, video -> if (identity(video) in changed) notifyItemChanged(index, "progress") }
         }
     }
+
+    fun refreshProgress() = loadHistory(items.toList(), generation)
 
     fun isSelectionMode(): Boolean = selectedUris.isNotEmpty()
 

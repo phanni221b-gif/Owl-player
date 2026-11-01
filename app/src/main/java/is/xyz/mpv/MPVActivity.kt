@@ -189,6 +189,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
     private var screenMode = SCREEN_MODE_FIT
     private var playerInitialized = false
+    private var taskExitRequested = false
     /* * */
 
     @SuppressLint("ClickableViewAccessibility")
@@ -258,6 +259,8 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
     override fun onCreate(icicle: Bundle?) {
         super.onCreate(icicle)
+        OwlSession.stopBrowserWork()
+        OwlSession.attach(this, ::stopForTaskExit)
 
         // Do these here and not in MainActivity because mpv can be launched from a file browser
         Utils.copyAssets(this)
@@ -310,6 +313,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         player.addObserver(this)
         player.initialize(filesDir.path, cacheDir.path)
         playerInitialized = true
+        OwlSession.playerReady = true
         OwlDiagnostics.attach(this, this, playbackReady = { playerInitialized })
         applyScreenMode(screenMode, notify = false)
         player.playFile(filepath)
@@ -351,6 +355,19 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         finish()
     }
 
+    private fun stopForTaskExit() {
+        if (taskExitRequested) return
+        taskExitRequested = true
+        eventUiHandler.removeCallbacksAndMessages(null)
+        fadeHandler.removeCallbacksAndMessages(null)
+        stopServiceHandler.removeCallbacksAndMessages(null)
+        BackgroundPlaybackService.stopAndClear(this, true)
+        if (playerInitialized) { savePosition(); MPVLib.command(arrayOf("stop")) }
+        didResumeBackgroundPlayback = false
+        mediaSession?.let { it.isActive = false; it.setCallback(null); it.release() }
+        mediaSession = null
+    }
+
     override fun onDestroy() {
         Log.v(TAG, "Exiting.")
 
@@ -377,11 +394,17 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }
         audioFocusRequest = null
 
-        // take the background service with us
-        stopServiceRunnable.run()
-
-        player.removeObserver(this)
-        player.destroy()
+        // Detach service observers/callbacks synchronously before native destruction.
+        stopServiceHandler.removeCallbacksAndMessages(null)
+        fadeHandler.removeCallbacksAndMessages(null)
+        BackgroundPlaybackService.stopAndClear(this, true)
+        OwlSession.playerReady = false
+        if (playerInitialized) {
+            player.removeObserver(this)
+            eventUiHandler.removeCallbacksAndMessages(null)
+            playerInitialized = false
+            player.destroy()
+        }
         super.onDestroy()
     }
 
@@ -464,6 +487,13 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     }
 
     private fun onPauseImpl() {
+        if (taskExitRequested || OwlSession.ending || !playerInitialized) {
+            activityIsForeground = false
+            eventUiHandler.removeCallbacksAndMessages(null)
+            writeSettings()
+            super.onPause()
+            return
+        }
         val shouldBackground = shouldBackground()
 
         activityIsForeground = false
@@ -1960,23 +1990,28 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
     private val mediaSessionCallback = object : MediaSessionCompat.Callback() {
         override fun onPause() {
+            if (!playerInitialized || taskExitRequested) return
             player.paused = true
         }
         override fun onPlay() {
+            if (!playerInitialized || taskExitRequested) return
             player.paused = false
         }
         override fun onSeekTo(pos: Long) {
+            if (!playerInitialized || taskExitRequested) return
             player.timePos = (pos / 1000.0)
         }
-        override fun onSkipToNext() = playlistNext()
-        override fun onSkipToPrevious() = playlistPrev()
+        override fun onSkipToNext() { if (playerInitialized && !taskExitRequested) playlistNext() }
+        override fun onSkipToPrevious() { if (playerInitialized && !taskExitRequested) playlistPrev() }
         override fun onSetRepeatMode(repeatMode: Int) {
+            if (!playerInitialized || taskExitRequested) return
             MPVLib.setPropertyString("loop-playlist",
                 if (repeatMode == PlaybackStateCompat.REPEAT_MODE_ALL) "inf" else "no")
             MPVLib.setPropertyString("loop-file",
                 if (repeatMode == PlaybackStateCompat.REPEAT_MODE_ONE) "inf" else "no")
         }
         override fun onSetShuffleMode(shuffleMode: Int) {
+            if (!playerInitialized || taskExitRequested) return
             player.changeShuffle(false, shuffleMode == PlaybackStateCompat.SHUFFLE_MODE_ALL)
         }
     }

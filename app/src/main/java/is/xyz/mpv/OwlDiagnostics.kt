@@ -21,6 +21,22 @@ object OwlDiagnostics {
         val states: MutableMap<String, Long> = mutableMapOf())
     private val frames = linkedMapOf<String, Frames>()
     private val samples = java.util.ArrayDeque<String>()
+    private val storageEvents = java.util.ArrayDeque<String>()
+    @Volatile private var runtimeEpoch = 0L
+    fun storageRecorder(): (String) -> Unit {
+        val epoch = runtimeEpoch
+        return { event -> synchronized(this) {
+            if (epoch == runtimeEpoch) {
+                if (storageEvents.size >= 40) storageEvents.removeFirst()
+                storageEvents.addLast(SystemClock.elapsedRealtime().toString() + " ms: " + event)
+            }
+        } }
+    }
+    private val stoppers = linkedSetOf<() -> Unit>()
+    fun resetRuntime() {
+        stoppers.toList().forEach { it() }; stoppers.clear()
+        synchronized(this) { runtimeEpoch++; frames.clear(); samples.clear(); storageEvents.clear() }
+    }
     fun enabled(context: Context) = context.getSharedPreferences(PREFS, 0).getBoolean("enabled", false)
     fun setEnabled(context: Context, value: Boolean) {
         context.getSharedPreferences(PREFS, 0).edit().putBoolean("enabled", value).apply()
@@ -59,11 +75,20 @@ object OwlDiagnostics {
                 handler.postDelayed(this, 1000)
             }
         }
+        val stop: () -> Unit = {
+            active = false
+            handler.removeCallbacks(poll)
+            tracker?.isTrackingEnabled = false
+            tracker = null
+            recycler?.removeOnScrollListener(scrollListener)
+        }
         owner.lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
-                if (!enabled(activity)) return
+                if (OwlSession.ending || !enabled(activity)) return
                 active = true
+                stoppers.add(stop)
                 recycler?.addOnScrollListener(scrollListener)
+                val epoch = runtimeEpoch
                 tracker = JankStats.createAndTrack(activity.window) { data ->
                     val state = listOfNotNull(
                         if (scrolling.get()) "scrolling" else null,
@@ -71,6 +96,7 @@ object OwlDiagnostics {
                         if (VideoThumbnailLoader.loading > 0) "thumbnail loading" else null
                     ).joinToString(" + ").ifEmpty { "idle" }
                     synchronized(this@OwlDiagnostics) {
+                        if (epoch != runtimeEpoch) return@createAndTrack
                         val f = frames.getOrPut(screen) { Frames() }
                         f.total++
                         if (data.isJank) f.jank++
@@ -80,23 +106,20 @@ object OwlDiagnostics {
                 }
                 if (playbackReady != null) handler.post(poll)
             }
-            override fun onStop(owner: LifecycleOwner) {
-                active = false
-                handler.removeCallbacks(poll)
-                tracker?.isTrackingEnabled = false
-                tracker = null
-                recycler?.removeOnScrollListener(scrollListener)
-            }
+            override fun onStop(owner: LifecycleOwner) { stop(); stoppers.remove(stop) }
+            override fun onDestroy(owner: LifecycleOwner) { stop(); stoppers.remove(stop) }
         })
     }
 
     @Synchronized fun report(): String = buildString {
-        append("Owl 0.5.0 diagnostics\nUI frame statistics (not video drops):\n")
+        append("Owl " + BuildConfig.VERSION_NAME + " diagnostics\nUI frame statistics (not video drops):\n")
         frames.forEach { (screen, f) ->
             append(String.format(Locale.US, "%s: frames=%d, jank=%d (%.2f%%), longest=%.2f ms\n",
                 screen, f.total, f.jank, if (f.total == 0L) 0.0 else f.jank * 100.0 / f.total, f.longestNs / 1e6))
             append(f.states.toString()).append('\n')
         }
+        append("\nStorage discovery transitions (latest 40):\n")
+        storageEvents.forEach { append(it).append('\n') }
         append("\nLatest playback summary:\n").append(samples.peekLast() ?: "No playback samples yet").append('\n')
         append("\nRead-only playback samples (latest 300):\n")
         samples.forEach { append(it).append('\n') }

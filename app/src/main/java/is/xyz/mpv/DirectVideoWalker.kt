@@ -9,6 +9,9 @@ internal object DirectVideoWalker {
     private val extensions = setOf("3gp", "avi", "flv", "m2ts", "m4v", "mkv", "mov", "mp4", "mpeg", "mpg", "mts", "ts", "webm", "wmv")
     fun isVideo(file: File) = file.extension.lowercase(Locale.ROOT) in extensions
     fun walk(root: File, recursive: Boolean, checkActive: () -> Unit, onVideo: (File) -> Unit) {
+        walkWithProgress(root, recursive, checkActive, {}, onVideo)
+    }
+    fun walkWithProgress(root: File, recursive: Boolean, checkActive: () -> Unit, onDirectory: () -> Unit, onVideo: (File) -> Unit) {
         val pending = ArrayDeque<File>()
         val visited = hashSetOf<String>()
         val rootPath = try { root.canonicalPath } catch (_: java.io.IOException) { return }
@@ -29,6 +32,7 @@ internal object DirectVideoWalker {
                     if (recursive) pending.add(child)
                 } else if (child.isFile && isVideo(child)) onVideo(child)
             }
+            onDirectory()
         }
     }
 }

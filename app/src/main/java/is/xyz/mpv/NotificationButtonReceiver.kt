@@ -10,6 +10,7 @@ import androidx.core.app.PendingIntentCompat
 
 class NotificationButtonReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context?, intent: Intent?) {
+        if (!OwlSession.playerReady || OwlSession.ending || intent == null) return
         Log.v(TAG, "NotificationButtonReceiver: ${intent!!.action}")
         // remember to update AndroidManifest.xml too when adding here
         when (intent.action) {

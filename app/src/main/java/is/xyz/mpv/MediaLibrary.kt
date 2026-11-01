@@ -4,9 +4,12 @@ import android.content.ContentUris
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import android.os.CancellationSignal
 import android.os.Environment
+import android.os.SystemClock
 import android.os.storage.StorageManager
 import android.provider.MediaStore
+import android.util.Log
 import java.io.File
 import java.util.Locale
 import kotlinx.coroutines.Dispatchers
@@ -14,89 +17,124 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 
 object MediaLibrary {
-    @Volatile
-    var cache: List<MediaFolder> = emptyList()
+    @Volatile var cache: List<MediaFolder> = emptyList()
         private set
-
-    private val scanMutex = Mutex()
-    @Volatile var scanning = false
-        private set
+    private val ownership = ScanOwnership()
+    private val traversal = Mutex()
+    private val primaryQueries = ProviderQueryRunner(2, "OwlPrimaryQuery")
+    private val externalQueries = ProviderQueryRunner(2, "OwlExternalQuery")
+    private val cacheLock = Any()
     private val directCache = mutableMapOf<String, Pair<Long, List<MediaFolder>>>()
+    val scanning: Boolean get() = ownership.isActive()
+    private const val PROVIDER_BUDGET_MS = 8_000L
+
+    fun cancelActive() = ownership.cancel()
+    fun resetSession() {
+        ownership.cancel()
+        synchronized(cacheLock) { directCache.clear(); cache = emptyList() }
+    }
 
     suspend fun scan(context: Context, force: Boolean = false,
-        onUpdate: (List<MediaFolder>) -> Unit = {}): List<MediaFolder> = scanMutex.withLock {
-        withContext(Dispatchers.IO) {
-            val job = currentCoroutineContext()[Job]!!
-            scanning = true
-            try { scanBlocking(context.applicationContext, job, force, null, onUpdate) }
-            finally { scanning = false }
+        onUpdate: (List<MediaFolder>) -> Unit = {}): List<MediaFolder> {
+        val ticket = ownership.begin(currentCoroutineContext()[Job]!!)
+        val app = context.applicationContext
+        try {
+            fun publish(folders: List<MediaFolder>) {
+                ownership.publish(ticket) { cache = folders; onUpdate(folders) }
+            }
+            val result = withContext(Dispatchers.Default) { DiscoveryPipeline.discover(
+                primary = { queryVolume(app, primaryVolume(), null, false) },
+                volumes = { removableVolumes(app) },
+                external = { queryVolume(app, it, null, true) },
+                reconcile = { emit -> reconcile(app, force, null, ticket, emit) },
+                publish = ::publish
+            ) }
+            publish(result)
+            return result
+        } finally { ownership.finish(ticket) }
+    }
+
+    suspend fun refreshFolder(context: Context, key: String): MediaFolder? {
+        val ticket = ownership.begin(currentCoroutineContext()[Job]!!)
+        try {
+            // A folder refresh never calls scan() or enumerates unrelated provider volumes.
+            val cached = cache.firstOrNull { it.key == key }
+            val primaryRoot = Environment.getExternalStorageDirectory().absolutePath
+            val volume = cached?.videos?.firstOrNull()?.let { video ->
+                val uri = Uri.parse(video.uri)
+                if (uri.scheme == "content" && Build.VERSION.SDK_INT >= 29)
+                    runCatching { MediaStore.getVolumeName(uri) }.getOrNull() else null
+            } ?: if (key.startsWith("/") && key != primaryRoot && !key.startsWith(primaryRoot + "/") &&
+                key.startsWith("/storage/")) key.removePrefix("/storage/").substringBefore('/').lowercase(Locale.ROOT)
+                else if (key.contains(':') && !key.startsWith("/")) key.substringBefore(':') else primaryVolume()
+            val result = withContext(Dispatchers.Default) { DiscoveryPipeline.folder(key,
+                query = { scoped -> queryVolume(context.applicationContext, volume, scoped, volume != primaryVolume()) },
+                reconcile = { scoped, emit -> reconcile(context.applicationContext, true, scoped, ticket, emit) }) }
+            ownership.publish(ticket) { cache = cache.filter { it.key != key } + listOfNotNull(result) }
+            return result
+        } finally { ownership.finish(ticket) }
+    }
+
+    private fun primaryVolume() = if (Build.VERSION.SDK_INT >= 29) MediaStore.VOLUME_EXTERNAL_PRIMARY else MediaStore.VOLUME_EXTERNAL
+
+    private suspend fun removableVolumes(context: Context): List<String> =
+        withTimeoutOrNull(PROVIDER_BUDGET_MS) {
+            externalQueries.query({}) {
+                if (Build.VERSION.SDK_INT >= 29) MediaStore.getExternalVolumeNames(context).filter { it != primaryVolume() }
+                else emptyList()
+            }
+        } ?: emptyList()
+
+    private suspend fun queryVolume(context: Context, volume: String, folderKey: String?, external: Boolean): List<MediaFolder> {
+        val signal = CancellationSignal()
+        val start = SystemClock.elapsedRealtime()
+        val record = OwlDiagnostics.storageRecorder()
+        val label = (if (external) "removable" else "primary") + (if (folderKey == null) " global" else " folder")
+        record(label + " query start")
+        return try {
+            val result = withTimeoutOrNull(PROVIDER_BUDGET_MS) {
+                (if (external) externalQueries else primaryQueries).query({ signal.cancel() }) {
+                    queryBlocking(context, volume, folderKey, signal)
+                }
+            }
+            Log.i("OwlMediaScan", "volume=" + volume + " ms=" + (SystemClock.elapsedRealtime() - start) +
+                " outcome=" + if (result == null) "timeout" else "ok")
+            record(label + " query " + (if (result == null) "timeout" else "ok") +
+                " elapsed=" + (SystemClock.elapsedRealtime() - start) + " folders=" + (result?.size ?: 0))
+            result ?: emptyList()
+        } catch (cancel: kotlinx.coroutines.CancellationException) { record(label + " query cancelled"); throw cancel }
+        catch (error: Exception) {
+            record(label + " query failed: " + error.javaClass.simpleName)
+            Log.w("OwlMediaScan", "Skipping provider volume " + volume, error)
+            emptyList()
         }
     }
 
-    suspend fun refreshFolder(context: Context, key: String): MediaFolder? = scanMutex.withLock {
-        withContext(Dispatchers.IO) {
-            scanning = true
-            try {
-                val result = scanBlocking(context.applicationContext, currentCoroutineContext()[Job]!!, true, key) {}
-                result.firstOrNull { it.key == key }
-            } finally { scanning = false }
-        }
+    private fun checkQueryActive(signal: CancellationSignal) {
+        signal.throwIfCanceled()
+        if (Thread.currentThread().isInterrupted) throw android.os.OperationCanceledException()
     }
 
-    private fun snapshot(grouped: Map<String, MediaFolder>) = MediaRules.snapshot(grouped)
-
-    private fun scanBlocking(context: Context, job: Job, force: Boolean, folderKey: String?,
-        onUpdate: (List<MediaFolder>) -> Unit): List<MediaFolder> {
+    private fun queryBlocking(context: Context, volume: String, folderKey: String?, signal: CancellationSignal): List<MediaFolder> {
         val grouped = linkedMapOf<String, MediaFolder>()
         val indexedPaths = hashSetOf<String>()
-        val resolver = context.contentResolver
-
-        val volumes = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            MediaStore.getExternalVolumeNames(context).toList()
-        } else {
-            listOf(MediaStore.VOLUME_EXTERNAL)
+        checkQueryActive(signal)
+        val collection = if (Build.VERSION.SDK_INT >= 29) MediaStore.Video.Media.getContentUri(volume)
+            else MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+        val projection = listOf(MediaStore.Video.Media._ID, MediaStore.Video.Media.DISPLAY_NAME,
+            MediaStore.Video.Media.DATA, MediaStore.Video.Media.DURATION, MediaStore.Video.Media.WIDTH,
+            MediaStore.Video.Media.HEIGHT, MediaStore.Video.Media.SIZE, MediaStore.Video.Media.DATE_MODIFIED)
+            .let { if (Build.VERSION.SDK_INT >= 29) it + MediaStore.Video.Media.RELATIVE_PATH else it }.toTypedArray()
+        val storageLabel = if (volume == primaryVolume()) "내부 저장소" else "외장 저장소"
+        val selection = folderKey?.let {
+            if (it.startsWith("/")) "${MediaStore.Video.Media.DATA} >= ? AND ${MediaStore.Video.Media.DATA} < ?" else "${MediaStore.Video.Media.RELATIVE_PATH} = ?"
         }
-
-        for (volume in volumes) {
-            job.ensureActive()
-            val collection = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                MediaStore.Video.Media.getContentUri(volume)
-            } else {
-                MediaStore.Video.Media.EXTERNAL_CONTENT_URI
-            }
-
-            val projection = arrayOf(
-                MediaStore.Video.Media._ID,
-                MediaStore.Video.Media.DISPLAY_NAME,
-                MediaStore.Video.Media.DATA,
-                MediaStore.Video.Media.RELATIVE_PATH,
-                MediaStore.Video.Media.DURATION,
-                MediaStore.Video.Media.WIDTH,
-                MediaStore.Video.Media.HEIGHT,
-                MediaStore.Video.Media.SIZE,
-                MediaStore.Video.Media.DATE_MODIFIED
-            )
-
-            val storageLabel = when {
-                Build.VERSION.SDK_INT < Build.VERSION_CODES.Q -> "저장소"
-                volume == MediaStore.VOLUME_EXTERNAL_PRIMARY -> "내부 저장소"
-                else -> "외장 저장소"
-            }
-
-            try {
-                val selection = folderKey?.let {
-                    if (it.startsWith("/")) "${MediaStore.Video.Media.DATA} >= ? AND ${MediaStore.Video.Media.DATA} < ?"
-                    else "${MediaStore.Video.Media.RELATIVE_PATH} = ?"
-                }
-                val arguments = folderKey?.let {
-                    // '/' sorts immediately before '0': a bound prefix range also handles % and _ literally.
-                    if (it.startsWith("/")) arrayOf(it + "/", it + "0") else arrayOf(it.substringAfter(':'))
-                }
-                resolver.query(collection, projection, selection, arguments, null)?.use { cursor ->
+        val arguments = folderKey?.let { if (it.startsWith("/")) arrayOf(it + "/", it + "0") else arrayOf(it.substringAfter(':')) }
+        context.contentResolver.query(collection, projection, selection, arguments, null, signal)?.use { cursor ->
                     val idCol = cursor.getColumnIndex(MediaStore.Video.Media._ID)
                     val nameCol = cursor.getColumnIndex(MediaStore.Video.Media.DISPLAY_NAME)
                     val dataCol = cursor.getColumnIndex(MediaStore.Video.Media.DATA)
@@ -108,7 +146,7 @@ object MediaLibrary {
                     val modifiedCol = cursor.getColumnIndex(MediaStore.Video.Media.DATE_MODIFIED)
 
                     while (cursor.moveToNext()) {
-                        job.ensureActive()
+                        checkQueryActive(signal)
                         val id = if (idCol >= 0) cursor.getLong(idCol) else continue
                         val title = if (nameCol >= 0) cursor.getString(nameCol) ?: "Video" else "Video"
                         val path = if (dataCol >= 0) cursor.getString(dataCol) else null
@@ -137,119 +175,78 @@ object MediaLibrary {
                             modifiedSeconds = if (modifiedCol >= 0) cursor.getLong(modifiedCol) else 0L
                         ), indexedPaths)
                     }
-                }
-            } catch (_: SecurityException) {
-                // The caller will surface the permission UI; skip inaccessible volumes here.
-            } catch (_: IllegalArgumentException) {
-                // Some vendors expose a volume before its media provider is ready.
-            }
         }
-
-        job.ensureActive()
-        if (folderKey == null) {
-            cache = snapshot(grouped)
-            onUpdate(cache)
-        }
-
-        // Reconcile all removable volumes, including partially indexed ones.
-        // Publish MediaStore first; traversal is cancellable and emits immutable snapshots.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R &&
-            BuildConfig.FLAVOR == "allstorage" &&
-            Environment.isExternalStorageManager()
-        ) {
-            if (folderKey == null) {
-                addDirectExternalVolumes(context, grouped, job, force, onUpdate)
-            } else if (folderKey.startsWith("/")) {
-                val known = grouped.values.flatMap { it.videos }.mapNotNull { it.path }.toMutableSet()
-                scanDirectRoot(File(folderKey), cache.firstOrNull { it.key == folderKey }?.storageLabel.orEmpty(), known, grouped, job, false) {}
-                directCache.clear()
-            }
-        }
-
-        job.ensureActive()
-        val result = snapshot(grouped)
-        cache = if (folderKey == null) result else cache.filter { it.key != folderKey } + result
-        return result
+        checkQueryActive(signal)
+        return MediaRules.snapshot(grouped)
     }
 
-    private fun addDirectExternalVolumes(
-        context: Context,
-        grouped: LinkedHashMap<String, MediaFolder>,
-        job: Job, force: Boolean, onUpdate: (List<MediaFolder>) -> Unit
-    ) {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return
-
-        val storageManager = context.getSystemService(Context.STORAGE_SERVICE) as? StorageManager ?: return
-        val knownPaths = grouped.values
-            .asSequence()
-            .flatMap { it.videos.asSequence() }
-            .mapNotNull { it.path?.takeIf { path -> path.isNotBlank() } }
-            .map { File(it).absolutePath }
-            .toMutableSet()
-
-        storageManager.storageVolumes
-            .asSequence()
-            .filter { !it.isPrimary }
-            .forEach { volume ->
-                val root = try {
-                    volume.directory
-                } catch (_: Throwable) {
-                    null
-                } ?: return@forEach
-
-                if (!root.exists() || !root.canRead()) return@forEach
-
+    private suspend fun reconcile(context: Context, force: Boolean, folderKey: String?, ticket: ScanOwnership.Ticket,
+        emit: (List<MediaFolder>) -> Unit) {
+        if (Build.VERSION.SDK_INT < 30 || BuildConfig.FLAVOR != "allstorage" || !Environment.isExternalStorageManager()) return
+        val record = OwlDiagnostics.storageRecorder()
+        // Never wait behind a stuck listFiles call. Only actual traversals use this lock.
+        if (!traversal.tryLock()) {
+            record("direct traversal busy; provider results retained")
+            return
+        }
+        record("direct " + (if (folderKey == null) "removable" else "folder") + " start")
+        try { withContext(Dispatchers.IO) {
+            val job = currentCoroutineContext()[Job]!!
+            job.ensureActive()
+            if (folderKey != null) {
+                if (folderKey.startsWith("/")) {
+                    val grouped = linkedMapOf<String, MediaFolder>()
+                    walk(File(folderKey), cache.firstOrNull { it.key == folderKey }?.storageLabel.orEmpty(), grouped, job, false, emit)
+                    job.ensureActive()
+                    emit(MediaRules.snapshot(grouped))
+                    ownership.publish(ticket) { synchronized(cacheLock) { directCache.clear() } }
+                }
+                return@withContext
+            }
+            val manager = context.getSystemService(Context.STORAGE_SERVICE) as? StorageManager ?: return@withContext
+            for (volume in manager.storageVolumes.filter { !it.isPrimary }) {
                 job.ensureActive()
-
-                val label = try {
-                    volume.getDescription(context).takeIf { it.isNotBlank() }
-                } catch (_: Throwable) {
-                    null
-                } ?: "외장 저장소"
-
-                val cached = directCache[root.absolutePath]
-                if (!force && cached != null && android.os.SystemClock.elapsedRealtime() - cached.first < 300_000L) {
-                    cached.second.forEach { folder -> folder.videos.forEach { video ->
-                        if (knownPaths.add(video.path ?: video.uri)) {
-                            grouped.getOrPut(folder.key) { folder.copy(videos = mutableListOf()) }.videos.add(video)
-                        }
-                    } }
-                } else {
-                    scanDirectRoot(root, label, knownPaths, grouped, job, true) {
+                try {
+                    val root = volume.directory ?: continue
+                    if (!root.canRead()) continue
+                    val label = volume.getDescription(context)
+                    val cached = synchronized(cacheLock) { directCache[root.absolutePath] }
+                    if (!force && cached != null && SystemClock.elapsedRealtime() - cached.first < 300_000) {
+                        emit(cached.second)
+                    } else {
+                        val grouped = linkedMapOf<String, MediaFolder>()
+                        walk(root, label, grouped, job, true, emit)
                         job.ensureActive()
-                        cache = snapshot(grouped)
-                        onUpdate(cache)
+                        val result = MediaRules.snapshot(grouped)
+                        emit(result)
+                        ownership.publish(ticket) { synchronized(cacheLock) { directCache[root.absolutePath] = SystemClock.elapsedRealtime() to result } }
                     }
-                    directCache[root.absolutePath] = android.os.SystemClock.elapsedRealtime() to
-                        snapshot(grouped).filter { it.key == root.absolutePath || it.key.startsWith(root.absolutePath + "/") }
-                }
+                } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+                catch (error: Exception) { Log.w("OwlMediaScan", "Removable storage unavailable", error) }
             }
+        } } finally { traversal.unlock(); record("direct traversal finished/cancelled") }
     }
 
-    private fun scanDirectRoot(
-        root: File,
-        storageLabel: String,
-        knownPaths: MutableSet<String>,
-        grouped: LinkedHashMap<String, MediaFolder>, job: Job, recursive: Boolean, onUpdate: () -> Unit
-    ) {
-        var lastUpdate = android.os.SystemClock.elapsedRealtime()
-        DirectVideoWalker.walk(root, recursive, { job.ensureActive() }) { child ->
-            val absolutePath = child.absolutePath
-            if (absolutePath !in knownPaths) {
-                val parent = child.parentFile ?: root
-                val key = parent.absolutePath
-                val folderName = if (parent.absolutePath == root.absolutePath) storageLabel
-                    else parent.name.takeIf { it.isNotBlank() } ?: storageLabel
-                MediaRules.add(grouped, key, folderName, storageLabel, MediaVideo(
-                    title = child.name, path = absolutePath, uri = Uri.fromFile(child).toString(),
-                    durationMs = 0L, width = 0, height = 0,
-                    sizeBytes = child.length(), modifiedSeconds = child.lastModified() / 1000L
-                ), knownPaths)
+    private fun walk(root: File, label: String, grouped: LinkedHashMap<String, MediaFolder>, job: Job,
+        recursive: Boolean, emit: (List<MediaFolder>) -> Unit) {
+        val seen = hashSetOf<String>()
+        var lastUpdate = SystemClock.elapsedRealtime()
+        var additions = 0
+        fun publishIfDue() {
+            if (SystemClock.elapsedRealtime() - lastUpdate >= 1500 && additions > 0) {
+                job.ensureActive()
+                emit(MediaRules.snapshot(grouped))
+                lastUpdate = SystemClock.elapsedRealtime()
+                additions = 0
             }
-            if (android.os.SystemClock.elapsedRealtime() - lastUpdate > 500L) {
-                onUpdate()
-                lastUpdate = android.os.SystemClock.elapsedRealtime()
-            }
+        }
+        DirectVideoWalker.walkWithProgress(root, recursive, { job.ensureActive() }, ::publishIfDue) { child ->
+            val parent = child.parentFile ?: root
+            MediaRules.add(grouped, parent.absolutePath, if (parent == root) label else parent.name, label,
+                MediaVideo(child.name, child.absolutePath, Uri.fromFile(child).toString(), 0, 0, 0,
+                    child.length(), child.lastModified() / 1000), seen)
+            additions++
+            publishIfDue()
         }
     }
 }

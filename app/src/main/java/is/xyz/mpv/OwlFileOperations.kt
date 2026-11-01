@@ -12,10 +12,11 @@ data class OwlFileOperationResult(
 )
 
 object OwlFileOperations {
-    fun deleteVideos(context: Context, videos: List<MediaVideo>): OwlFileOperationResult {
+    fun deleteVideos(context: Context, videos: List<MediaVideo>, checkActive: () -> Unit = {}): OwlFileOperationResult {
         var success = 0
         var failed = 0
         videos.forEach { video ->
+            checkActive()
             val source = video.path?.takeIf { it.isNotBlank() }?.let(::File)
             val fileDeleted = source?.let { !it.exists() || it.delete() } ?: false
             val providerDeleted = if (!fileDeleted) deleteMediaRow(context, video.uri) else {
@@ -27,14 +28,15 @@ object OwlFileOperations {
         return OwlFileOperationResult(success, failed)
     }
 
-    fun deleteFolders(context: Context, folders: List<MediaFolder>): OwlFileOperationResult {
+    fun deleteFolders(context: Context, folders: List<MediaFolder>, checkActive: () -> Unit = {}): OwlFileOperationResult {
         var success = 0
         var failed = 0
         folders.forEach { folder ->
+            checkActive()
             val source = folderDirectory(folder)
-            val deleted = source?.let { !it.exists() || it.deleteRecursively() } ?: false
+            val deleted = source?.let { !it.exists() || CancellableFileWork.deleteTree(it, checkActive) } ?: false
             if (deleted) {
-                folder.videos.forEach { deleteMediaRow(context, it.uri) }
+                folder.videos.forEach { checkActive(); deleteMediaRow(context, it.uri) }
                 success++
             } else {
                 failed++
@@ -43,11 +45,12 @@ object OwlFileOperations {
         return OwlFileOperationResult(success, failed)
     }
 
-    fun moveVideos(context: Context, videos: List<MediaVideo>, destinationDir: File): OwlFileOperationResult {
+    fun moveVideos(context: Context, videos: List<MediaVideo>, destinationDir: File, checkActive: () -> Unit = {}): OwlFileOperationResult {
         if (!ensureDirectory(destinationDir)) return OwlFileOperationResult(0, videos.size)
         var success = 0
         var failed = 0
         videos.forEach { video ->
+            checkActive()
             val source = video.path?.takeIf { it.isNotBlank() }?.let(::File)
             if (source == null || !source.exists() || !source.isFile) {
                 failed++
@@ -58,7 +61,7 @@ object OwlFileOperations {
                 return@forEach
             }
             val target = uniqueTarget(destinationDir, source)
-            if (movePath(source, target)) {
+            if (CancellableFileWork.move(source, target, checkActive)) {
                 deleteMediaRow(context, video.uri)
                 scan(context, listOf(target))
                 success++
@@ -69,11 +72,12 @@ object OwlFileOperations {
         return OwlFileOperationResult(success, failed)
     }
 
-    fun moveFolders(context: Context, folders: List<MediaFolder>, destinationDir: File): OwlFileOperationResult {
+    fun moveFolders(context: Context, folders: List<MediaFolder>, destinationDir: File, checkActive: () -> Unit = {}): OwlFileOperationResult {
         if (!ensureDirectory(destinationDir)) return OwlFileOperationResult(0, folders.size)
         var success = 0
         var failed = 0
         folders.forEach { folder ->
+            checkActive()
             val source = folderDirectory(folder)
             if (source == null || !source.exists() || !source.isDirectory) {
                 failed++
@@ -88,9 +92,10 @@ object OwlFileOperations {
                 return@forEach
             }
             val target = uniqueTarget(destinationDir, source)
-            if (movePath(source, target)) {
-                folder.videos.forEach { deleteMediaRow(context, it.uri) }
+            if (CancellableFileWork.move(source, target, checkActive)) {
+                folder.videos.forEach { checkActive(); deleteMediaRow(context, it.uri) }
                 val movedMedia = target.walkTopDown()
+                    .onEach { checkActive() }
                     .filter { it.isFile && Utils.MEDIA_EXTENSIONS.contains(it.extension.lowercase()) }
                     .toList()
                 scan(context, movedMedia)
@@ -142,46 +147,6 @@ object OwlFileOperations {
             index++
         }
         return candidate
-    }
-
-    private fun movePath(source: File, target: File): Boolean {
-        target.parentFile?.mkdirs()
-        if (source.renameTo(target)) return true
-
-        if (source.isDirectory) {
-            if (target.exists()) return false
-            val copied = runCatching { source.copyRecursively(target, overwrite = false) }.getOrDefault(false)
-            if (!copied) {
-                target.deleteRecursively()
-                return false
-            }
-            return if (source.deleteRecursively()) {
-                true
-            } else {
-                // Keep the verified destination copy if source cleanup was only partial.
-                // Reporting failure is safer than pretending the move completed.
-                false
-            }
-        }
-
-        return runCatching {
-            source.inputStream().use { input ->
-                target.outputStream().use { output -> input.copyTo(output, 1024 * 1024) }
-            }
-            if (target.length() != source.length()) {
-                target.delete()
-                return@runCatching false
-            }
-            target.setLastModified(source.lastModified())
-            if (!source.delete()) {
-                target.delete()
-                return@runCatching false
-            }
-            true
-        }.getOrElse {
-            target.delete()
-            false
-        }
     }
 
     private fun deleteMediaRow(context: Context, uriString: String): Boolean {

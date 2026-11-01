@@ -25,6 +25,7 @@ object VideoThumbnailLoader {
         override fun sizeOf(key: String, value: Bitmap) = (value.allocationByteCount / 1024).coerceAtLeast(1)
     }
     private class Request(val key: String) {
+        @Volatile var cancelled = false
         val targets = mutableListOf<WeakReference<ImageView>>()
         val signal = CancellationSignal()
         var future: Future<*>? = null
@@ -39,7 +40,8 @@ object VideoThumbnailLoader {
         target.tag = null
         request.targets.removeAll { it.get() == null || it.get() === target }
         if (request.targets.isEmpty()) {
-            request.signal.cancel()
+            request.cancelled = true
+            ProviderQueryRunner.cancelOnWorker { request.signal.cancel() }
             request.future?.cancel(true)
             (request.future as? Runnable)?.let { executor.remove(it) }
             if (requests[request.key] === request) requests.remove(request.key)
@@ -47,11 +49,27 @@ object VideoThumbnailLoader {
         }
     }
 
+    @Synchronized fun cancelAll(clearCache: Boolean) {
+        val pending = requests.values.toList()
+        requests.clear()
+        loading = 0
+        pending.forEach { request ->
+            request.cancelled = true
+            request.future?.cancel(true)
+            (request.future as? Runnable)?.let { executor.remove(it) }
+            ProviderQueryRunner.cancelOnWorker { request.signal.cancel() }
+            request.targets.forEach { ref -> ref.get()?.let { if (it.tag === request) it.tag = null } }
+            request.targets.clear()
+        }
+        if (clearCache) { cache.evictAll(); failures.evictAll() }
+    }
+
     @Synchronized fun load(target: ImageView, video: MediaVideo) {
+        if (OwlSession.ending) return
         val key = (video.path?.takeIf { it.isNotBlank() } ?: video.uri) +
             ":" + video.modifiedSeconds + ":" + video.sizeBytes
         val previous = target.tag as? Request
-        if (previous?.key == key && !previous.signal.isCanceled) return
+        if (previous?.key == key && !previous.cancelled) return
         cancel(target)
         cache.get(key)?.let { target.setImageBitmap(it); return }
         target.setImageResource(R.drawable.ic_play_arrow_black_24dp)
@@ -82,7 +100,7 @@ object VideoThumbnailLoader {
     @Synchronized private fun complete(request: Request, bitmap: Bitmap?) {
         if (requests[request.key] === request) requests.remove(request.key)
         loading = requests.size
-        if (request.signal.isCanceled) { bitmap?.recycle(); return }
+        if (request.cancelled) { bitmap?.recycle(); return }
         if (bitmap != null) cache.put(request.key, bitmap)
         else failures.put(request.key, SystemClock.elapsedRealtime())
         request.targets.forEach { ref -> ref.get()?.let { target ->
