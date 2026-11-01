@@ -187,12 +187,29 @@ jobs:
             app/build/reports/
 
       - name: Publish GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/') || startsWith(github.ref, 'refs/heads/maintenance/release-v')
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release create "$GITHUB_REF_NAME" Owl-${{ env.OWL_VERSION }}-arm64.apk Owl-${{ env.OWL_VERSION }}-arm64.sha256 build-info.txt native-revisions.txt --verify-tag --title "Owl ${{ env.OWL_VERSION }}" --notes-file docs/release-${{ env.OWL_VERSION }}.md
+        shell: bash
+        run: |
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            EXPECTED_BRANCH="maintenance/release-v$OWL_VERSION"
+            test "$GITHUB_REF_NAME" = "$EXPECTED_BRANCH"
+            TAG="v$OWL_VERSION"
+            if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+              echo "Refusing to replace existing tag $TAG" >&2
+              exit 1
+            fi
+            git config user.name "Owl Release Automation"
+            git config user.email "actions@users.noreply.github.com"
+            git tag -a "$TAG" "$GITHUB_SHA" -m "Owl $OWL_VERSION"
+            git push origin "refs/tags/$TAG"
+          fi
+          test "$TAG" = "v$OWL_VERSION"
+          gh release create "$TAG" Owl-${{ env.OWL_VERSION }}-arm64.apk Owl-${{ env.OWL_VERSION }}-arm64.sha256 build-info.txt native-revisions.txt --verify-tag --title "Owl ${{ env.OWL_VERSION }}" --notes-file docs/release-${{ env.OWL_VERSION }}.md
 
       - name: Remove temporary signing key
         if: always()
         run: rm -f "$OWL_KEYSTORE_PATH"
-
