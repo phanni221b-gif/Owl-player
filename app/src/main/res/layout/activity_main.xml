@@ -30,7 +30,7 @@
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:background="?attr/selectableItemBackgroundBorderless"
-            android:contentDescription="검색"
+            android:contentDescription="현재 저장소 이하 검색"
             android:src="@android:drawable/ic_menu_search"
             app:tint="?android:attr/textColorPrimary" />
 
@@ -51,6 +51,38 @@
             android:contentDescription="설정"
             android:src="@drawable/ic_settings_black_24dp"
             app:tint="?android:attr/textColorPrimary" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/mainBrowseControls"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="8dp"
+        android:paddingEnd="8dp">
+
+        <Button
+            android:id="@+id/mainStorageButton"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="전체 저장소"
+            android:textAllCaps="false"
+            android:textColor="@color/owl_orange_dark" />
+
+        <Button
+            android:id="@+id/mainBrowseButton"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="0dp"
+            android:layout_height="48dp"
+            android:layout_weight="1"
+            android:text="저장소 탐색"
+            android:textAllCaps="false"
+            android:textColor="@color/owl_orange_dark" />
     </LinearLayout>
 
     <LinearLayout
