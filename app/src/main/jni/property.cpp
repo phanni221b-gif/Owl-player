@@ -1,5 +1,6 @@
 #include <jni.h>
 #include <stdlib.h>
+#include "render_pass_stats.h"
 
 #include <mpv/client.h>
 
@@ -18,6 +19,8 @@ extern "C" {
     jni_func(void, setPropertyBoolean, jstring property, jboolean value);
     jni_func(jstring, getPropertyString, jstring jproperty);
     jni_func(void, setPropertyString, jstring jproperty, jstring jvalue);
+
+    jni_func(jint, requestRenderPassSummary, jlong request_id);
 
     jni_func(void, observeProperty, jstring property, jint format);
 }
@@ -122,4 +125,11 @@ jni_func(void, observeProperty, jstring property, jint format) {
     if (result < 0)
         ALOGE("mpv_observe_property(%s) format %d returned error %s", prop, format, mpv_error_string(result));
     env->ReleaseStringUTFChars(property, prop);
+}
+
+// Async request only. Replies are summarized in event.cpp; the UI never waits for VO timing.
+jni_func(jint, requestRenderPassSummary, jlong request_id) {
+    CHECK_MPV_INIT();
+    const uint64_t token = OWL_RENDER_QUERY_TAG | (static_cast<uint64_t>(request_id) & OWL_RENDER_QUERY_MASK);
+    return mpv_get_property_async(g_mpv, token, "vo-passes", MPV_FORMAT_NODE);
 }

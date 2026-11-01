@@ -33,10 +33,9 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     private var currentVideos: List<MediaVideo> = emptyList()
     private var displayedVideos: List<MediaVideo> = emptyList()
     private var sortMode = SORT_NAME
-    private var scanJob: Job? = null
+    private lateinit var scans: LifecycleScanController<MediaVideo>
     private var fileJob: Job? = null
     private var launchJob: Job? = null
-    private var scanInterrupted = false
     private var activeVideo: MediaVideo? = null
     private var activePlaylist: List<MediaVideo> = emptyList()
     private var pendingMoveVideos: List<MediaVideo> = emptyList()
@@ -84,8 +83,8 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         OwlSession.attach(this) {
-            scanJob?.cancel(); launchJob?.cancel(); fileJob?.cancel(); adapter.cancelPending()
-            scanInterrupted = false; activeVideo = null; activePlaylist = emptyList()
+            if (::scans.isInitialized) scans.close(); launchJob?.cancel(); fileJob?.cancel(); adapter.cancelPending()
+            activeVideo = null; activePlaylist = emptyList()
         }
         SystemBarInsets.apply(findViewById(R.id.folderRoot))
 
@@ -109,7 +108,25 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
         recycler.layoutManager = LinearLayoutManager(this)
         recycler.adapter = adapter
         OwlDiagnostics.attach(this, this, recycler)
-        swipeRefresh.setOnRefreshListener { rescanFolder(showLoadingText = false) }
+        scans = LifecycleScanController(this, lifecycleScope, "folder",
+            allowed = { !OwlSession.ending && !isFinishing && !isDestroyed },
+            scan = { _, _ -> MediaLibrary.refreshFolder(applicationContext, folderKey)?.videos.orEmpty() },
+            data = { videos ->
+                currentVideos = videos; applySort()
+                emptyText.visibility = if (videos.isEmpty()) View.VISIBLE else View.GONE
+                if (videos.isEmpty()) emptyText.text = "영상이 없습니다."
+            }, stateChanged = { phase ->
+                swipeRefresh.isRefreshing = phase == LifecycleScanState.Phase.LOADING
+                if (currentVideos.isEmpty()) {
+                    emptyText.text = when (phase) {
+                        LifecycleScanState.Phase.LOADING -> "영상을 불러오는 중…"
+                        LifecycleScanState.Phase.PENDING -> "검색을 시작할 준비 중…"
+                        LifecycleScanState.Phase.ERROR, LifecycleScanState.Phase.CANCELLED -> "아래로 당겨 다시 검색해주세요."
+                        else -> emptyText.text
+                    }
+                }
+            })
+        swipeRefresh.setOnRefreshListener { rescanFolder() }
 
         onBackPressedDispatcher.addCallback(this) {
             if (adapter.isSelectionMode()) adapter.clearSelection() else finish()
@@ -138,32 +155,10 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
         rescanFolder()
     }
 
-    private fun rescanFolder(showLoadingText: Boolean = true) {
-        if (OwlSession.ending || isFinishing || isDestroyed) return
-        if (!lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) {
-            scanInterrupted = true
-            return
-        }
-        if (showLoadingText) {
-            emptyText.visibility = View.VISIBLE
-            emptyText.text = "영상을 불러오는 중…"
-        }
-        scanJob?.cancel()
-        scanJob = lifecycleScope.launch {
-            try {
-                val folder = MediaLibrary.refreshFolder(applicationContext, folderKey)
-                currentVideos = folder?.videos ?: emptyList()
-                applySort()
-                emptyText.visibility = if (currentVideos.isEmpty()) View.VISIBLE else View.GONE
-                if (currentVideos.isEmpty()) emptyText.text = "영상이 없습니다."
-            } finally { if (coroutineContext[Job] === scanJob) swipeRefresh.isRefreshing = false }
-        }
-    }
+    private fun rescanFolder() = scans.request(force = true)
 
     override fun onStop() {
         adapter.pauseThumbnails(recycler, true)
-        scanInterrupted = scanInterrupted || scanJob?.isActive == true
-        scanJob?.cancel()
         launchJob?.cancel()
         super.onStop()
     }
@@ -171,7 +166,6 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     override fun onStart() {
         super.onStart()
         adapter.pauseThumbnails(recycler, false)
-        if (scanInterrupted) { scanInterrupted = false; rescanFolder(false) }
     }
 
     private fun applySort() {
@@ -240,9 +234,11 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
         if (OwlSession.ending || isFinishing || isDestroyed) return
         if (launchJob?.isActive == true) return
         val snapshot = displayedVideos.toList()
-        scanJob?.cancel()
+        scans.pause("playback launch")
         OwlSession.stopBrowserWork()
         launchJob = lifecycleScope.launch {
+            var launched = false
+            try {
             val prepared = withContext(Dispatchers.Default) {
                 val startIndex = snapshot.indexOfFirst { it.uri == video.uri }.coerceAtLeast(0)
                 val memoryPlaylist = Utils.makeMemoryPlaylist(snapshot.map { it.path?.takeIf { p -> p.isNotBlank() } ?: it.uri })
@@ -259,6 +255,10 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
             playerLauncher.launch(Intent(this@FolderActivity, MPVActivity::class.java).apply {
                 putExtra("filepath", prepared.second)
             })
+            launched = true
+            } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+            catch (_: Exception) { Toast.makeText(this@FolderActivity, "재생을 시작하지 못했습니다.", Toast.LENGTH_SHORT).show() }
+            finally { if (!launched) scans.resumeIfForeground() }
         }
     }
 

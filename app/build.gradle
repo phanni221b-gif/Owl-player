@@ -23,8 +23,8 @@ android {
         minSdkVersion 23
         targetSdk 36
 
-        versionCode 66
-        versionName "0.5.3"
+        versionCode 67
+        versionName "0.6.0"
 
         vectorDrawables.useSupportLibrary = true
 
@@ -46,6 +46,8 @@ android {
             minSdkVersion 30
         }
     }
+
+    testOptions { unitTests.includeAndroidResources = true }
 
     buildFeatures {
         viewBinding = true
@@ -95,6 +97,7 @@ dependencies {
     implementation 'androidx.lifecycle:lifecycle-runtime-ktx:2.9.4'
     implementation 'androidx.metrics:metrics-performance:1.0.0'
     testImplementation 'junit:junit:4.13.2'
+    testImplementation 'org.robolectric:robolectric:4.16.1'
     implementation 'androidx.appcompat:appcompat:1.7.1'
     implementation 'androidx.recyclerview:recyclerview:1.4.0'
     implementation 'androidx.swiperefreshlayout:swiperefreshlayout:1.1.0'

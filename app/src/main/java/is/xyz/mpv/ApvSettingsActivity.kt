@@ -57,6 +57,21 @@ class ApvSettingsActivity : AppCompatActivity(R.layout.activity_apv_settings) {
             applyMode(this, mode)
         }
 
+        configureNeuralRow(false, prefs)
+        configureNeuralRow(true, prefs)
+        findViewById<android.view.View>(R.id.neuralAttribution).setOnClickListener {
+            android.app.AlertDialog.Builder(this).setTitle("FSRCNNX · GPU")
+                .setMessage(assets.open("neural/ATTRIBUTION.txt").bufferedReader().use { it.readText() })
+                .setPositiveButton("닫기", null)
+                .setNeutralButton("LGPLv3 / GPLv3") { _, _ ->
+                    val text = listOf("COPYING.LESSER", "COPYING").joinToString("\n\n") { file ->
+                        assets.open("neural/" + file).bufferedReader().use { it.readText() }
+                    }
+                    android.app.AlertDialog.Builder(this).setTitle("LGPL-3.0-or-later")
+                        .setMessage(text).setPositiveButton("닫기", null).show()
+                }.show()
+        }
+
         val decoders = findViewById<RadioGroup>(R.id.decoderModes)
         when (prefs.getString(KEY_DECODER_MODE, DECODER_AUTO)) {
             DECODER_HW_PLUS -> decoders.check(R.id.decoderHwPlus)
@@ -75,6 +90,30 @@ class ApvSettingsActivity : AppCompatActivity(R.layout.activity_apv_settings) {
                 .putString(KEY_DECODER_MODE, mode)
                 .putBoolean("hardware_decoding", mode != DECODER_SW)
                 .apply()
+        }
+    }
+
+    private fun configureNeuralRow(ai: Boolean, prefs: android.content.SharedPreferences) {
+        val enabledKey = if (ai) QualityPreferences.AI_ENABLED else QualityPreferences.NEURAL_ENABLED
+        val bucketKey = if (ai) QualityPreferences.AI_BUCKETS else QualityPreferences.NEURAL_BUCKETS
+        val check = findViewById<CheckBox>(if (ai) R.id.aiMaxEnabled else R.id.neuralEnabled)
+        val label = if (ai) "AI Max" else "Neural"
+        fun updateLabel() {
+            check.text = label + " · GPU\n" + QualityPreferences.buckets(prefs, ai).joinToString { it.label }.ifEmpty { "적용 해상도를 선택해주세요" }
+        }
+        updateLabel()
+        check.isChecked = prefs.getBoolean(enabledKey, false)
+        check.setOnCheckedChangeListener { _, enabled -> prefs.edit().putBoolean(enabledKey, enabled).apply() }
+        findViewById<android.view.View>(if (ai) R.id.aiMaxResolutionSettings else R.id.neuralResolutionSettings).setOnClickListener {
+            val buckets = ResolutionBucket.entries
+            val selected = QualityPreferences.buckets(prefs, ai)
+            val checked = buckets.map { it in selected }.toBooleanArray()
+            android.app.AlertDialog.Builder(this).setTitle(label + " · 원본 영상 해상도")
+                .setMultiChoiceItems(buckets.map { it.label }.toTypedArray(), checked) { _, which, value -> checked[which] = value }
+                .setPositiveButton("적용") { _, _ ->
+                    prefs.edit().putStringSet(bucketKey, buckets.filterIndexed { index, _ -> checked[index] }.map { it.name }.toSet()).apply()
+                    updateLabel()
+                }.setNegativeButton("취소", null).show()
         }
     }
 

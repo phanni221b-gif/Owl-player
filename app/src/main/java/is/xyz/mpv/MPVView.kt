@@ -19,11 +19,13 @@ internal class MPVView(context: Context, attrs: AttributeSet) : BaseMPVView(cont
     override fun initOptions() {
         val sharedPreferences = PreferenceManager.getDefaultSharedPreferences(context)
 
-        // apply phone-optimized defaults
-        MPVLib.setOptionString("profile", "fast")
+        // Ultra/neural sessions must not inherit fast-profile quality restrictions.
+        val quality = QualityPreferences.read(context)
+        if (!quality.needsGpuNext) MPVLib.setOptionString("profile", "fast")
 
         // vo
-        setVo(if (sharedPreferences.getBoolean("gpu_next", false))
+        setVo(if (quality.needsGpuNext) "gpu-next,gpu"
+        else if (sharedPreferences.getBoolean("gpu_next", false))
             "gpu-next"
         else
             "gpu")
@@ -120,6 +122,7 @@ internal class MPVView(context: Context, attrs: AttributeSet) : BaseMPVView(cont
         val screenshotDir = Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES)
         screenshotDir.mkdirs()
         MPVLib.setOptionString("screenshot-directory", screenshotDir.path)
+        QualityPlaybackOptions.initial(context)
     }
 
     override fun postInitOptions() {

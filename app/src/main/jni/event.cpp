@@ -1,3 +1,5 @@
+#include <stdio.h>
+#include "render_pass_stats.h"
 #include <jni.h>
 
 #include <mpv/client.h>
@@ -68,6 +70,25 @@ static void sendLogMessageToJava(JNIEnv *env, mpv_event_log_message *msg)
         env->DeleteLocalRef(jtext);
 }
 
+// The event owns its NODE memory until the next mpv_wait_event; do not free it here.
+static void sendRendererSummaryToJava(JNIEnv *env, const mpv_event *event) {
+    const auto *property = static_cast<const mpv_event_property *>(event->data);
+    const auto id = static_cast<unsigned long long>(event->reply_userdata & OWL_RENDER_QUERY_MASK);
+    char buffer[192];
+    if (event->error >= 0 && property && property->format == MPV_FORMAT_NODE && property->data) {
+        const auto stats = owl_render_pass_stats(*static_cast<const mpv_node *>(property->data));
+        snprintf(buffer, sizeof(buffer), "id=%llu,n8=%d,n16=%d,passes=%d,avg_ns=%lld", id,
+            stats.neural8 ? 1 : 0, stats.neural16 ? 1 : 0, stats.passes, (long long)stats.average_ns);
+    } else {
+        snprintf(buffer, sizeof(buffer), "id=%llu,available=0", id);
+    }
+    jstring name = env->NewStringUTF("owl-render-pass-summary");
+    jstring value = env->NewStringUTF(buffer);
+    env->CallStaticVoidMethod(mpv_MPVLib, mpv_MPVLib_eventProperty_SS, name, value);
+    env->DeleteLocalRef(name);
+    env->DeleteLocalRef(value);
+}
+
 void *event_thread(void *arg)
 {
     JNIEnv *env = NULL;
@@ -93,6 +114,12 @@ void *event_thread(void *arg)
             msg = (mpv_event_log_message*)mp_event->data;
             ALOGV("[%s:%s] %s", msg->prefix, msg->level, msg->text);
             sendLogMessageToJava(env, msg);
+            break;
+        case MPV_EVENT_GET_PROPERTY_REPLY:
+            if ((mp_event->reply_userdata & ~OWL_RENDER_QUERY_MASK) == OWL_RENDER_QUERY_TAG)
+                sendRendererSummaryToJava(env, mp_event);
+            else
+                sendEventToJava(env, mp_event->event_id);
             break;
         case MPV_EVENT_PROPERTY_CHANGE:
             mp_property = (mpv_event_property*)mp_event->data;
