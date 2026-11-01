@@ -39,6 +39,7 @@ class StorageBrowserActivity : AppCompatActivity(R.layout.activity_storage_brows
     private var launchJob: Job? = null
     private var activeVideo: MediaVideo? = null
     private var activePlaylist: List<MediaVideo> = emptyList()
+    private var restartBrowseOnStart = false
 
     private val playerLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -51,7 +52,6 @@ class StorageBrowserActivity : AppCompatActivity(R.layout.activity_storage_brows
             val video = activePlaylist.getOrNull(index) ?: fallback
             val position = result.data!!.getIntExtra("position", -1)
             val duration = result.data!!.getIntExtra("duration", -1)
-            activePlaylist = emptyList()
             if (video != null && position >= 0) {
                 PlaybackHistory.save(
                     this,
@@ -60,9 +60,8 @@ class StorageBrowserActivity : AppCompatActivity(R.layout.activity_storage_brows
                     if (duration > 0) duration.toLong() else video.durationMs
                 )
             }
-        } else {
-            activePlaylist = emptyList()
         }
+        activePlaylist = emptyList()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -101,6 +100,14 @@ class StorageBrowserActivity : AppCompatActivity(R.layout.activity_storage_brows
         if (requestedQuery.isNotEmpty()) runSearch(requestedQuery) else loadCurrent()
     }
 
+    override fun onStart() {
+        super.onStart()
+        if (restartBrowseOnStart) {
+            restartBrowseOnStart = false
+            refreshCurrent()
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         val latest = StorageBrowser.roots(this)
@@ -121,6 +128,7 @@ class StorageBrowserActivity : AppCompatActivity(R.layout.activity_storage_brows
     }
 
     override fun onStop() {
+        if (browseJob?.isActive == true) restartBrowseOnStart = true
         browseJob?.cancel()
         super.onStop()
     }
@@ -223,7 +231,7 @@ class StorageBrowserActivity : AppCompatActivity(R.layout.activity_storage_brows
         launchJob = lifecycleScope.launch {
             val prepared = withContext(Dispatchers.Default) {
                 val index = snapshot.indexOfFirst { it.uri == video.uri }.coerceAtLeast(0)
-                index to Utils.makeMemoryPlaylist(snapshot.map { it.path?.takeIf(String::isNotBlank) ?: it.uri })
+                index to Utils.makeMemoryPlaylist(snapshot.map { it.path?.takeIf { path -> path.isNotBlank() } ?: it.uri })
             }
             val history = withContext(Dispatchers.IO) {
                 if (ApvSettingsActivity.isResumeEnabled(this@StorageBrowserActivity))
