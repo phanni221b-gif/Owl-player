@@ -10,4 +10,4 @@ Owl 0.5.2 adds storage-scoped browsing and name search while preserving the 0.5.
 - `Android/data` and `Android/obb` remain excluded from direct traversal.
 - Search and directory traversal are cancellable and stop when the browser leaves the foreground or the Owl session is ended from Recents.
 
-Playback core, native dependency revisions, video-sync, hwdec, scaler and gpu options are unchanged from 0.5.1.
+Playback core, native dependency revisions, video-sync, hwdec, scaler and gpu options are unchanged from 0.5.1. Release validation keeps the protected playback hashes, unit tests, lint, signing and AArch64 artifact checks enabled.
