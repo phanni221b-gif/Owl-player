@@ -87,3 +87,12 @@ internal object QualityOptions {
         )
     }
 }
+
+internal object NeuralGeometry {
+    /** Same strict 1.3x threshold as the bundled shader, invariant under 90-degree rotation. */
+    fun upscaleRequired(sourceWidth: Int, sourceHeight: Int, outputWidth: Int, outputHeight: Int): Boolean? {
+        if (minOf(sourceWidth, sourceHeight, outputWidth, outputHeight) <= 0) return null
+        return minOf(outputWidth, outputHeight).toDouble() / minOf(sourceWidth, sourceHeight) > 1.3 &&
+            maxOf(outputWidth, outputHeight).toDouble() / maxOf(sourceWidth, sourceHeight) > 1.3
+    }
+}

@@ -34,13 +34,24 @@ internal class QualityPlaybackController(context: Context) : MPVLib.EventObserve
     private var effective = configuration.base
     private var shaderStatus = "not_requested"
     private var renderer: RenderPassSummary? = null
-    init { MPVLib.addObserver(this); MPVLib.addLogObserver(this) }
+    private val geometryCheck = Runnable {
+        val mode = attempted
+        if (!closed && decided && mode?.neural == true && shaderStatus != "model_loading")
+            startConfirmation(generation, attemptNumber, mode)
+    }
+    init {
+        MPVLib.addObserver(this); MPVLib.addLogObserver(this)
+        if (configuration.neural.isNotEmpty() || configuration.aiMax.isNotEmpty()) {
+            MPVLib.observeProperty("osd-dimensions", MPVLib.MpvFormat.MPV_FORMAT_NONE)
+            MPVLib.observeProperty("video-zoom", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
+        }
+    }
     override fun event(eventId: Int) {
         handler.post {
             if (closed || OwlSession.ending) return@post
             when (eventId) {
                 MPVLib.MpvEvent.MPV_EVENT_START_FILE -> {
-                    generation++; attemptNumber++; metadataJob?.cancel(); confirmation?.cancel()
+                    generation++; attemptNumber++; metadataJob?.cancel(); confirmation?.cancel(); handler.removeCallbacks(geometryCheck)
                     decided = false; deciding = false; source = null; fallback = null; attempted = null
                     effective = configuration.base; shaderStatus = "not_requested"; renderer = null
                     if (configuration.needsGpuNext) MPVLib.setOptionString("glsl-shaders", "")
@@ -96,7 +107,7 @@ internal class QualityPlaybackController(context: Context) : MPVLib.EventObserve
             }
             MPVLib.setOptionString("glsl-shaders", "") // overwrite the list; never stack model shaders
             var failedOption: String? = null
-            for ((name, value) in QualityPlaybackOptions.options(mode, prefs)) {
+            for ((name, value) in QualityPlaybackOptions.options(mode, prefs, mode == configuration.base)) {
                 if (MPVLib.setOptionString(name, value) < 0) { failedOption = name; break }
             }
             if (failedOption != null) { chain.fail("option_rejected_" + failedOption); shaderStatus = "option_failed"; report(); continue }
@@ -113,20 +124,37 @@ internal class QualityPlaybackController(context: Context) : MPVLib.EventObserve
                 chain.fail("shader_option_rejected"); shaderStatus = "load_failed"; report(); continue
             }
             shaderStatus = "awaiting_render_confirmation"; report()
-            confirmation = scope.launch {
-                repeat(16) {
-                    delay(350)
-                    if (closed || token != generation || attempt != attemptNumber) return@launch
-                    renderer = runCatching { RenderPassSummary.parse(MPVLib.getRenderPassSummary()) }.getOrNull()
-                    val stats = renderer
-                    val matched = if (mode == QualityMode.AI_MAX) stats?.neural16 == true && !stats.neural8
-                        else stats?.neural8 == true && !stats.neural16
-                    if (matched) { effective = mode; shaderStatus = "loaded_and_rendered"; report(); return@launch }
-                }
-                downgrade(token, attempt, "shader_not_observed_or_upscale_bypassed")
-            }
+            startConfirmation(token, attempt, mode)
             return
         }
+    }
+    private fun upscaleRequired(): Boolean? {
+        val video = source ?: return null
+        val width = MPVLib.getPropertyInt("osd-dimensions/w") ?: return null
+        val height = MPVLib.getPropertyInt("osd-dimensions/h") ?: return null
+        fun margin(name: String) = MPVLib.getPropertyInt("osd-dimensions/" + name) ?: 0
+        return NeuralGeometry.upscaleRequired(video.width, video.height,
+            width - margin("ml") - margin("mr"), height - margin("mt") - margin("mb"))
+    }
+    private fun startConfirmation(token: Long, attempt: Long, mode: QualityMode) {
+        confirmation?.cancel()
+        confirmation = scope.launch {
+            repeat(16) {
+                delay(350)
+                if (closed || token != generation || attempt != attemptNumber) return@launch
+                if (upscaleRequired() == false) {
+                    effective = QualityMode.ULTRA; shaderStatus = "bypassed_no_upscale"; report(); return@launch
+                }
+                renderer = runCatching { RenderPassSummary.parse(MPVLib.getRenderPassSummary()) }.getOrNull()
+                val matched = if (mode == QualityMode.AI_MAX) renderer?.neural16 == true else renderer?.neural8 == true
+                if (matched) { effective = mode; shaderStatus = "loaded_and_rendered"; report(); return@launch }
+            }
+            downgrade(token, attempt, "shader_render_confirmation_failed")
+        }
+    }
+    private fun geometryChanged() {
+        handler.removeCallbacks(geometryCheck)
+        handler.postDelayed(geometryCheck, 450) // fold/rotation/zoom events, never video-frame callbacks
     }
     private fun downgrade(token: Long, attempt: Long, reason: String) {
         if (closed || token != generation || attempt != attemptNumber) return
@@ -162,7 +190,7 @@ internal class QualityPlaybackController(context: Context) : MPVLib.EventObserve
             ", base=" + configuration.base.label + ", requested=" + (fallback?.candidates?.firstOrNull()?.label ?: configuration.base.label) +
             ", effective=" + effective.label + ", Neural/AI backend=" + backend +
             ", model=" + (if (neural) "FSRCNNX x2 " + NeuralModel.forMode(attempted!!).channels + " channels" else "none") +
-            ", shader=" + shaderStatus + ", fallback=" + (fallback?.reasons?.isNotEmpty() == true) +
+            ", shader=" + shaderStatus + ", bypass=" + (shaderStatus == "bypassed_no_upscale") + ", fallback=" + (fallback?.reasons?.isNotEmpty() == true) +
             ", reasons=" + fallback?.reasons.orEmpty().joinToString("; ") +
             ", renderer-pass-avg-ns=" + (renderer?.averageNs ?: "n/a")
         )
@@ -173,9 +201,9 @@ internal class QualityPlaybackController(context: Context) : MPVLib.EventObserve
         MPVLib.removeObserver(this); MPVLib.removeLogObserver(this)
         handler.removeCallbacksAndMessages(null); scope.cancel()
     }
-    override fun eventProperty(property: String) {}
+    override fun eventProperty(property: String) { if (property == "osd-dimensions") geometryChanged() }
     override fun eventProperty(property: String, value: Long) {}
     override fun eventProperty(property: String, value: Boolean) {}
     override fun eventProperty(property: String, value: String) {}
-    override fun eventProperty(property: String, value: Double) {}
+    override fun eventProperty(property: String, value: Double) { if (property == "video-zoom") geometryChanged() }
 }

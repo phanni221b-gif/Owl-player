@@ -11,7 +11,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 internal class BoundedVideoWalker(private val budgetMs: Long = 8_000,
     private val workers: ProviderQueryRunner = ProviderQueryRunner(2, "OwlDirectoryRead")) {
     data class Video(val file: File, val size: Long, val modified: Long)
-    data class Batch(val canonical: String, val directories: List<File>, val videos: List<Video>)
+    data class Batch(val canonical: String, val directories: List<File>, val videos: List<Video>,
+        val uninspected: List<File>? = null)
     suspend fun walk(root: File, recursive: Boolean, onDirectory: () -> Unit, onVideo: (Video) -> Unit,
         event: (String) -> Unit = {}, inspect: (File) -> Batch? = ::inspectDirectory) {
         val pending = ArrayDeque<File>(); val visited = hashSetOf<String>()
@@ -29,20 +30,35 @@ internal class BoundedVideoWalker(private val budgetMs: Long = 8_000,
             if (rootPath == null) rootPath = batch.canonical
             if (batch.canonical != rootPath && !batch.canonical.startsWith(rootPath + File.separator)) continue
             if (!visited.add(batch.canonical)) continue
-            for (video in batch.videos) { currentCoroutineContext().ensureActive(); onVideo(video) }
-            if (recursive) for (child in batch.directories) {
-                val relative = child.relativeTo(root).invariantSeparatorsPath
-                if (relative.equals("Android/data", true) || relative.startsWith("Android/data/", true) ||
-                    relative.equals("Android/obb", true) || relative.startsWith("Android/obb/", true)) continue
-                pending.add(child)
+            fun publish(part: Batch) {
+                for (video in part.videos) onVideo(video)
+                if (recursive) for (child in part.directories) {
+                    val relative = child.relativeTo(root).invariantSeparatorsPath
+                    if (relative.equals("Android/data", true) || relative.startsWith("Android/data/", true) ||
+                        relative.equals("Android/obb", true) || relative.startsWith("Android/obb/", true)) continue
+                    pending.add(child)
+                }
+                onDirectory()
             }
-            onDirectory()
+            if (batch.uninspected == null) publish(batch)
+            else for (chunk in batch.uninspected.chunked(128)) {
+                currentCoroutineContext().ensureActive()
+                val part = try {
+                    withTimeoutOrNull(budgetMs) { workers.query({}) { inspectChildren(batch.canonical, chunk) } }
+                } catch (cancel: CancellationException) { throw cancel }
+                catch (_: Exception) { null }
+                currentCoroutineContext().ensureActive()
+                if (part != null) publish(part) else event("direct metadata batch timeout/unavailable; partial retained")
+            }
         }
     }
     companion object {
         private fun inspectDirectory(directory: File): Batch? {
             val canonical = directory.canonicalPath
             val children = directory.listFiles() ?: return null
+            return Batch(canonical, emptyList(), emptyList(), children.toList())
+        }
+        private fun inspectChildren(canonical: String, children: List<File>): Batch {
             val directories = mutableListOf<File>(); val videos = mutableListOf<Video>()
             for (child in children) {
                 if (Thread.currentThread().isInterrupted) throw CancellationException("directory cancelled")

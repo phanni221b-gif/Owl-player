@@ -237,6 +237,8 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
         scans.pause("playback launch")
         OwlSession.stopBrowserWork()
         launchJob = lifecycleScope.launch {
+            var launched = false
+            try {
             val prepared = withContext(Dispatchers.Default) {
                 val startIndex = snapshot.indexOfFirst { it.uri == video.uri }.coerceAtLeast(0)
                 val memoryPlaylist = Utils.makeMemoryPlaylist(snapshot.map { it.path?.takeIf { p -> p.isNotBlank() } ?: it.uri })
@@ -253,6 +255,10 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
             playerLauncher.launch(Intent(this@FolderActivity, MPVActivity::class.java).apply {
                 putExtra("filepath", prepared.second)
             })
+            launched = true
+            } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
+            catch (_: Exception) { Toast.makeText(this@FolderActivity, "재생을 시작하지 못했습니다.", Toast.LENGTH_SHORT).show() }
+            finally { if (!launched) scans.resumeIfForeground() }
         }
     }
 

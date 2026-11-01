@@ -146,7 +146,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
                 kotlinx.coroutines.withTimeoutOrNull(8_000) { rootsWorker.query({}) { StorageBrowser.roots(app) } }
             } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
             catch (_: Exception) { null }
-            if (OwlSession.ending) return@launch
+            if (OwlSession.ending || !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return@launch
             if (roots != null) storageRoots = roots
             validateSelectedStorage(fallbackToPrimary)
             updateStorageButton()

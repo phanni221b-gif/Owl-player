@@ -29,7 +29,7 @@ object OwlDiagnostics {
         val epoch = runtimeEpoch
         return { event -> synchronized(this) {
             if (epoch == runtimeEpoch) {
-                if (storageEvents.size >= 40) storageEvents.removeFirst()
+                if (storageEvents.size >= 200) storageEvents.removeFirst()
                 storageEvents.addLast(SystemClock.elapsedRealtime().toString() + " ms: " + event)
             }
         } }
@@ -121,7 +121,7 @@ object OwlDiagnostics {
                 screen, f.total, f.jank, if (f.total == 0L) 0.0 else f.jank * 100.0 / f.total, f.longestNs / 1e6))
             append(f.states.toString()).append('\n')
         }
-        append("\nStorage discovery transitions (latest 40):\n")
+        append("\nStorage discovery transitions (latest 200):\n")
         storageEvents.forEach { append(it).append('\n') }
         append("\nQuality pipeline:\n").append(quality).append('\n')
         append("\nLatest playback summary:\n").append(samples.peekLast() ?: "No playback samples yet").append('\n')

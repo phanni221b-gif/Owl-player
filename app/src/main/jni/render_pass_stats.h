@@ -20,21 +20,28 @@ inline const mpv_node *owl_map_value(const mpv_node &node, const char *key) {
 }
 inline OwlRenderPassStats owl_render_pass_stats(const mpv_node &root) {
     OwlRenderPassStats result;
-    const auto *fresh = owl_map_value(root, "fresh");
-    if (!fresh || fresh->format != MPV_FORMAT_NODE_ARRAY || !fresh->u.list) return result;
-    for (int i = 0; i < fresh->u.list->num; ++i) {
-        const auto &pass = fresh->u.list->values[i];
-        ++result.passes;
-        const auto *desc = owl_map_value(pass, "desc");
-        if (desc && desc->format == MPV_FORMAT_STRING && desc->u.string) {
-            // Only the completed RGB reconstruction proves the CNN reached the output.
-            result.neural8 |= std::strstr(desc->u.string, "Owl FSRCNNX 8 RGB reconstruction") != nullptr;
-            result.neural16 |= std::strstr(desc->u.string, "Owl FSRCNNX 16 RGB reconstruction") != nullptr;
+    const char *types[] = {"fresh", "redraw"};
+    for (const char *type : types) {
+        const auto *frame = owl_map_value(root, type);
+        if (!frame || frame->format != MPV_FORMAT_NODE_ARRAY || !frame->u.list) continue;
+        int passes = 0;
+        int64_t average_ns = 0;
+        for (int i = 0; i < frame->u.list->num; ++i) {
+            const auto &pass = frame->u.list->values[i];
+            ++passes;
+            const auto *desc = owl_map_value(pass, "desc");
+            if (desc && desc->format == MPV_FORMAT_STRING && desc->u.string) {
+                // Fresh/redraw are separate histories, not simultaneously stacked shaders.
+                result.neural8 |= std::strstr(desc->u.string, "Owl FSRCNNX 8 RGB reconstruction") != nullptr;
+                result.neural16 |= std::strstr(desc->u.string, "Owl FSRCNNX 16 RGB reconstruction") != nullptr;
+            }
+            const auto *avg = owl_map_value(pass, "avg");
+            if (avg && avg->format == MPV_FORMAT_INT64 && avg->u.int64 >= 0 &&
+                avg->u.int64 <= std::numeric_limits<int64_t>::max() - average_ns)
+                average_ns += avg->u.int64;
         }
-        const auto *avg = owl_map_value(pass, "avg");
-        if (avg && avg->format == MPV_FORMAT_INT64 && avg->u.int64 >= 0 &&
-            avg->u.int64 <= std::numeric_limits<int64_t>::max() - result.average_ns)
-            result.average_ns += avg->u.int64;
+        // Prefer fresh frame timing; use redraw only before a fresh sample exists.
+        if (result.passes == 0) { result.passes = passes; result.average_ns = average_ns; }
     }
     return result;
 }

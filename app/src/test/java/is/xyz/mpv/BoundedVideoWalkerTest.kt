@@ -23,6 +23,15 @@ class BoundedVideoWalkerTest {
             assertEquals(3L, found.sumOf { it.size })
         } finally { root.deleteRecursively() }
     }
+    @Test fun largeDirectoryPublishesBoundedMetadataBatchesWithoutLosingVideos() = runBlocking {
+        val root = Files.createTempDirectory("owl-large-directory").toFile()
+        try {
+            repeat(300) { File(root,"video-" + it + ".mp4").writeText("video") }
+            var progress = 0; var videos = 0
+            BoundedVideoWalker().walk(root,false,{ progress++ },{ videos++ })
+            assertEquals(300,videos); assertTrue(progress >= 3)
+        } finally { root.deleteRecursively() }
+    }
     @Test fun uninterruptibleDirectoryCannotBlockNextWalkOrPublishLateVideos() = runBlocking {
         val release = CountDownLatch(1); val entered = CountDownLatch(1)
         val worker = ProviderQueryRunner(2, "OwlTestDirectory")

@@ -68,6 +68,13 @@ class QualityProfileTest {
         }
         assertTrue(File(assets,NeuralModel.aiMax.file).length() > File(assets,NeuralModel.neural.file).length())
     }
+    @Test fun noUpscaleBypassesCnnAndZoomOrRotationCanActivateItWithoutChangingTheSourcePlan() {
+        assertEquals(false, NeuralGeometry.upscaleRequired(1920,1080,1920,1080))
+        assertEquals(false, NeuralGeometry.upscaleRequired(1280,720,1664,936)) // exactly 1.3x is not enough
+        assertEquals(true, NeuralGeometry.upscaleRequired(1280,720,1920,1080))
+        assertEquals(true, NeuralGeometry.upscaleRequired(720,1280,1080,1920))
+        assertNull(NeuralGeometry.upscaleRequired(720,1280,0,0))
+    }
     @Test fun renderConfirmationRequiresActualMatchingCnnReconstructionPass() {
         assertNull(RenderPassSummary.parse(null))
         val pending = RenderPassSummary.parse("n8=0,n16=0,passes=4,avg_ns=42")!!

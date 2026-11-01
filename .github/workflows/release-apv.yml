@@ -76,7 +76,7 @@ jobs:
           7cd7f3a6c9f7da6176be5bfc0c6d3c0be39ea5582919f3b6dd2ddb82a6342953  buildscripts/scripts/libplacebo.sh
           043338c15fbbd79e505a7f96c3436fc6ba16f81e4cbd41351742e2d65f632853  buildscripts/scripts/mpv.sh
           33fd2e40e11c45dc3ebd92f6b1bca51aba79339e31abdfc4545cab280fd5e95c  buildscripts/scripts/mpv-android.sh
-          93c55618f2861163675bf78052ba20e7897fe4e6e081a858c4a4439bd89d531f  app/src/main/jni/render_pass_stats.h
+          0be8586578ddd935b3ae73be514b55267578b871f03f02303c95d5aa9de21fb7  app/src/main/jni/render_pass_stats.h
           a69956145ee1d270c61826734e5d51501714667a8359c8db28203f409f71c699  app/src/main/java/is/xyz/mpv/TouchGestures.kt
           EOF
           sha256sum -c /tmp/owl-protected-core.sha256

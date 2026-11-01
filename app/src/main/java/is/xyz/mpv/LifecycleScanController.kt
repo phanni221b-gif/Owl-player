@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
 
 /** Android binding. Provider and filesystem cancellation never has to finish before the next request. */
 internal class LifecycleScanController<T>(
-    owner: LifecycleOwner, private val scope: CoroutineScope, private val label: String,
+    private val owner: LifecycleOwner, private val scope: CoroutineScope, private val label: String,
     private val allowed: () -> Boolean,
     private val scan: suspend (Boolean, (List<T>) -> Unit) -> List<T>,
     private val data: (List<T>) -> Unit, private val stateChanged: (LifecycleScanState.Phase) -> Unit
@@ -43,6 +43,9 @@ internal class LifecycleScanController<T>(
         state.background(); job?.cancel(); job = null
         if (active != null) record(label + " cancellation; generation=" + active.generation + "; reason=" + reason)
         update()
+    }
+    fun resumeIfForeground() {
+        if (allowed() && owner.lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) onStart(owner)
     }
     fun close() { state.close(); job?.cancel(); job = null; update() }
     private fun update() = stateChanged(state.phase)
