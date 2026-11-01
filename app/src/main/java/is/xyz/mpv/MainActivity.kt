@@ -23,6 +23,12 @@ import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import java.io.File
 import java.util.Locale
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.isActive
 import kotlin.concurrent.thread
 
 class MainActivity : AppCompatActivity(R.layout.activity_main) {
@@ -30,6 +36,8 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private lateinit var emptyText: TextView
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private val adapter = FolderAdapter(::openFolder, ::onFolderSelectionChanged)
+    private var scanJob: Job? = null
+    private var scanInterrupted = false
     private var waitingForAllFiles = false
     private var currentFolders: List<MediaFolder> = emptyList()
     private var sortMode = SORT_NAME
@@ -69,7 +77,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         recycler.adapter = adapter
         recycler.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> updateGridSpan() }
         recycler.post { updateGridSpan() }
-        swipeRefresh.setOnRefreshListener { loadFolders(showLoadingText = false) }
+        swipeRefresh.setOnRefreshListener { loadFolders(showLoadingText = false, force = true) }
 
         findViewById<ImageButton>(R.id.searchButton).setOnClickListener { showSearch() }
         findViewById<ImageButton>(R.id.sortButton).setOnClickListener { showSortMenu() }
@@ -158,21 +166,39 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private fun hasAllFilesAccess(): Boolean =
         Build.VERSION.SDK_INT < Build.VERSION_CODES.R || Environment.isExternalStorageManager()
 
-    private fun loadFolders(showLoadingText: Boolean = true) {
+    private fun loadFolders(showLoadingText: Boolean = true, force: Boolean = false) {
         if (showLoadingText) {
             emptyText.text = "영상 폴더를 찾는 중…"
             emptyText.visibility = View.VISIBLE
         }
-        thread(name = "OwlMediaScan") {
-            val folders = MediaLibrary.scan(this)
-            runOnUiThread {
-                currentFolders = folders
-                applySort()
-                emptyText.visibility = if (folders.isEmpty()) View.VISIBLE else View.GONE
-                if (folders.isEmpty()) emptyText.text = "영상이 있는 폴더를 찾지 못했습니다."
-                swipeRefresh.isRefreshing = false
-            }
+        scanJob?.cancel()
+        scanJob = lifecycleScope.launch {
+            try {
+                val owner = coroutineContext[Job]!!
+                val folders = MediaLibrary.scan(applicationContext, force) { partial ->
+                    runOnUiThread { if (owner.isActive) displayFolders(partial) }
+                }
+                displayFolders(folders)
+            } finally { swipeRefresh.isRefreshing = false }
         }
+    }
+
+    private fun displayFolders(folders: List<MediaFolder>) {
+        currentFolders = folders
+        applySort()
+        emptyText.visibility = if (folders.isEmpty()) View.VISIBLE else View.GONE
+        if (folders.isEmpty()) emptyText.text = "영상이 있는 폴더를 찾지 못했습니다."
+    }
+
+    override fun onStop() {
+        scanInterrupted = scanJob?.isActive == true
+        scanJob?.cancel()
+        super.onStop()
+    }
+
+    override fun onStart() {
+        super.onStart()
+        if (scanInterrupted) { scanInterrupted = false; loadFolders(false) }
     }
 
     private fun applySort() {
@@ -202,7 +228,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             .setSingleChoiceItems(items, checked) { dialog, which ->
                 if (which == 3) {
                     dialog.dismiss()
-                    loadFolders()
+                    loadFolders(force = true)
                     return@setSingleChoiceItems
                 }
                 sortMode = when (which) {
