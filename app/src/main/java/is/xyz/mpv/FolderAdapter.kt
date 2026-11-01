@@ -6,13 +6,18 @@ import android.view.ViewGroup
 import android.widget.ImageView
 import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
+import androidx.recyclerview.widget.ListAdapter
+import androidx.recyclerview.widget.DiffUtil
 
 class FolderAdapter(
     private val onClick: (MediaFolder) -> Unit,
     private val onSelectionChanged: (Int) -> Unit
-) : RecyclerView.Adapter<FolderAdapter.Holder>() {
+) : ListAdapter<MediaFolder, FolderAdapter.Holder>(object : DiffUtil.ItemCallback<MediaFolder>() {
+    override fun areItemsTheSame(a: MediaFolder, b: MediaFolder) = a.key == b.key
+    override fun areContentsTheSame(a: MediaFolder, b: MediaFolder) = a == b
+}) {
     private var allItems: List<MediaFolder> = emptyList()
-    private var visibleItems: List<MediaFolder> = emptyList()
+    private val visibleItems: List<MediaFolder> get() = currentList
     private var currentQuery: String = ""
     private val selectedKeys = linkedSetOf<String>()
 
@@ -35,28 +40,30 @@ class FolderAdapter(
 
     fun clearSelection() {
         if (selectedKeys.isEmpty()) return
+        val changed = selectedKeys.toSet()
         selectedKeys.clear()
-        notifyDataSetChanged()
+        updateSelection(changed)
         onSelectionChanged(0)
     }
 
     fun selectAllVisible() {
-        selectedKeys.addAll(visibleItems.map { it.key })
-        notifyDataSetChanged()
+        val changed = visibleItems.map { it.key }.filterNot { it in selectedKeys }.toSet()
+        selectedKeys.addAll(changed)
+        updateSelection(changed)
         onSelectionChanged(selectedKeys.size)
     }
 
     private fun toggleSelection(item: MediaFolder) {
         if (!selectedKeys.add(item.key)) selectedKeys.remove(item.key)
-        notifyDataSetChanged()
+        updateSelection(setOf(item.key))
         onSelectionChanged(selectedKeys.size)
     }
 
     private fun applyFilter() {
-        visibleItems = if (currentQuery.isBlank()) allItems else allItems.filter {
+        val filtered = if (currentQuery.isBlank()) allItems else allItems.filter {
             it.name.contains(currentQuery, ignoreCase = true)
         }
-        notifyDataSetChanged()
+        submitList(filtered)
     }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
@@ -64,7 +71,14 @@ class FolderAdapter(
         return Holder(view)
     }
 
-    override fun getItemCount(): Int = visibleItems.size
+    private fun updateSelection(keys: Set<String>) {
+        currentList.forEachIndexed { index, item -> if (item.key in keys) notifyItemChanged(index, "selection") }
+    }
+
+    override fun onBindViewHolder(holder: Holder, position: Int, payloads: MutableList<Any>) {
+        if (payloads.isEmpty()) super.onBindViewHolder(holder, position, payloads)
+        else holder.itemView.isActivated = getItem(position).key in selectedKeys
+    }
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
         holder.bind(visibleItems[position])
