@@ -29,7 +29,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.isActive
-import kotlin.concurrent.thread
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
 
 class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private lateinit var recycler: RecyclerView
@@ -37,6 +38,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private val adapter = FolderAdapter(::openFolder, ::onFolderSelectionChanged)
     private var scanJob: Job? = null
+    private var fileJob: Job? = null
     private var scanInterrupted = false
     private var pendingForce = false
     private var waitingForAllFiles = false
@@ -65,6 +67,8 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        OwlSession.prepareLauncher(this, savedInstanceState == null && isTaskRoot && intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER))
+        OwlSession.attach(this) { scanJob?.cancel(); fileJob?.cancel(); scanInterrupted = false }
 
         SystemBarInsets.apply(findViewById(R.id.mainRoot))
         ApvSettingsActivity.ensureDefaults(this)
@@ -175,7 +179,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             pendingForce = pendingForce || force
             return
         }
-        if (showLoadingText) {
+        if (showLoadingText && currentFolders.isEmpty()) {
             emptyText.text = "영상 폴더를 찾는 중…"
             emptyText.visibility = View.VISIBLE
         }
@@ -184,7 +188,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             try {
                 val owner = coroutineContext[Job]!!
                 val folders = MediaLibrary.scan(applicationContext, force) { partial ->
-                    runOnUiThread { if (owner.isActive) displayFolders(partial) }
+                    runOnUiThread { if (owner.isActive && !OwlSession.ending) displayFolders(partial) }
                 }
                 displayFolders(folders)
             } finally { if (coroutineContext[Job] === scanJob) swipeRefresh.isRefreshing = false }
@@ -287,8 +291,12 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
 
     private fun performFolderDelete(selected: List<MediaFolder>) {
         Toast.makeText(this, "완전 삭제 중…", Toast.LENGTH_SHORT).show()
-        thread(name = "OwlPermanentFolderDelete") {
-            val result = OwlFileOperations.deleteFolders(this, selected)
+        if (fileJob?.isActive == true) return
+        fileJob = lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val job = currentCoroutineContext()[Job]!!
+                OwlFileOperations.deleteFolders(this@MainActivity, selected) { job.ensureActive() }
+            }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 adapter.clearSelection()
@@ -315,8 +323,12 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
 
     private fun performFolderMove(selected: List<MediaFolder>, destination: File) {
         Toast.makeText(this, "이동 중…", Toast.LENGTH_SHORT).show()
-        thread(name = "OwlFolderMove") {
-            val result = OwlFileOperations.moveFolders(this, selected, destination)
+        if (fileJob?.isActive == true) return
+        fileJob = lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val job = currentCoroutineContext()[Job]!!
+                OwlFileOperations.moveFolders(this@MainActivity, selected, destination) { job.ensureActive() }
+            }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 adapter.clearSelection()

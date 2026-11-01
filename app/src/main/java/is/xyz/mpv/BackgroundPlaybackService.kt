@@ -28,14 +28,20 @@ import `is`.xyz.mpv.MPVLib.MpvEvent
 */
 
 class BackgroundPlaybackService : Service(), MPVLib.EventObserver {
+    @Volatile private var closed = false
+    private var observerAttached = false
+
     override fun onCreate() {
+        super.onCreate()
+        activeService = this
         thumbnailHandler = Handler(mainLooper)
 
-        MPVLib.addObserver(this)
+        if (OwlSession.playerReady) { MPVLib.addObserver(this); observerAttached = true }
     }
 
     private lateinit var thumbnailHandler: Handler
     private val thumbnailRunnable = Runnable {
+        if (closed || !OwlSession.playerReady) return@Runnable
         grabThumbnail()
         thumbnailChanged?.let {
             it() // FIXME: this is a dumb hack, we need to refactor the responsiblities
@@ -117,11 +123,13 @@ class BackgroundPlaybackService : Service(), MPVLib.EventObserver {
 
     @SuppressLint("NotificationPermission") // not required for foreground service
     private fun refreshNotification() {
+        if (closed || !OwlSession.playerReady) return
         val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
         notificationManager.notify(NOTIFICATION_ID, buildNotification())
     }
 
-    override fun onStartCommand(intent: Intent, flags: Int, startId: Int): Int {
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (closed || OwlSession.ending || !OwlSession.playerReady) { stopSelf(); return START_NOT_STICKY }
         Log.v(TAG, "BackgroundPlaybackService: starting")
 
         cachedMetadata.readAll()
@@ -142,15 +150,27 @@ class BackgroundPlaybackService : Service(), MPVLib.EventObserver {
         return START_NOT_STICKY // Android can't restart this service on its own
     }
 
-    override fun onDestroy() {
-        MPVLib.removeObserver(this)
-
+    private fun closeResources() {
+        if (closed) return
+        closed = true
         thumbnailHandler.removeCallbacksAndMessages(null)
+        if (observerAttached) { MPVLib.removeObserver(this); observerAttached = false }
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        (getSystemService(NOTIFICATION_SERVICE) as NotificationManager).cancel(NOTIFICATION_ID)
+    }
 
-        val notificationManager = getSystemService(NOTIFICATION_SERVICE) as NotificationManager
-        notificationManager.cancel(NOTIFICATION_ID)
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        OwlSession.exit(applicationContext)
+        closeResources()
+        stopSelf()
+        super.onTaskRemoved(rootIntent)
+    }
 
+    override fun onDestroy() {
+        closeResources()
+        if (activeService === this) activeService = null
         Log.v(TAG, "BackgroundPlaybackService: destroyed")
+        super.onDestroy()
     }
 
     override fun onBind(intent: Intent): IBinder? { return null }
@@ -158,12 +178,14 @@ class BackgroundPlaybackService : Service(), MPVLib.EventObserver {
     /* Event observers */
 
     override fun eventProperty(property: String) {
+        if (closed || !OwlSession.playerReady) return
         if (!cachedMetadata.update(property))
             return
         refreshNotification()
     }
 
     override fun eventProperty(property: String, value: Boolean) {
+        if (closed || !OwlSession.playerReady) return
         if (property != "pause")
             return
         paused = value
@@ -175,12 +197,14 @@ class BackgroundPlaybackService : Service(), MPVLib.EventObserver {
     override fun eventProperty(property: String, value: Double) { }
 
     override fun eventProperty(property: String, value: String) {
+        if (closed || !OwlSession.playerReady) return
         if (!cachedMetadata.update(property, value))
             return
         refreshNotification()
     }
 
     override fun event(eventId: Int) {
+        if (closed || !OwlSession.playerReady) return
         if (eventId == MpvEvent.MPV_EVENT_SHUTDOWN) {
             stopSelf()
         } else if (eventId == MpvEvent.MPV_EVENT_VIDEO_RECONFIG) {
@@ -191,6 +215,14 @@ class BackgroundPlaybackService : Service(), MPVLib.EventObserver {
 
 
     companion object {
+        private var activeService: BackgroundPlaybackService? = null
+        fun stopAndClear(context: Context, releaseSessionRefs: Boolean = false) {
+            activeService?.closeResources()
+            context.stopService(Intent(context, BackgroundPlaybackService::class.java))
+            (context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).cancel(NOTIFICATION_ID)
+            if (releaseSessionRefs) { thumbnailChanged = null; mediaToken = null; thumbnail = null }
+        }
+
         /* thumbnail to display alongside the permanent notification */
         var thumbnail: Bitmap? = null
         /* Set by MPVActivity; for connecting the notification to the media session */

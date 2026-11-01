@@ -21,7 +21,8 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.isActive
-import kotlin.concurrent.thread
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.currentCoroutineContext
 
 class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     private lateinit var recycler: RecyclerView
@@ -33,6 +34,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     private var displayedVideos: List<MediaVideo> = emptyList()
     private var sortMode = SORT_NAME
     private var scanJob: Job? = null
+    private var fileJob: Job? = null
     private var launchJob: Job? = null
     private var scanInterrupted = false
     private var activeVideo: MediaVideo? = null
@@ -79,6 +81,10 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        OwlSession.attach(this) {
+            scanJob?.cancel(); launchJob?.cancel(); fileJob?.cancel(); adapter.cancelPending()
+            scanInterrupted = false; activeVideo = null; activePlaylist = emptyList()
+        }
         SystemBarInsets.apply(findViewById(R.id.folderRoot))
 
         folderKey = intent.getStringExtra(EXTRA_FOLDER_KEY).orEmpty()
@@ -201,6 +207,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
         if (launchJob?.isActive == true) return
         val snapshot = displayedVideos.toList()
         scanJob?.cancel()
+        OwlSession.stopBrowserWork()
         launchJob = lifecycleScope.launch {
             val prepared = withContext(Dispatchers.Default) {
                 val startIndex = snapshot.indexOfFirst { it.uri == video.uri }.coerceAtLeast(0)
@@ -234,9 +241,13 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
 
     private fun performVideoDelete(selected: List<MediaVideo>) {
         Toast.makeText(this, "완전 삭제 중…", Toast.LENGTH_SHORT).show()
-        thread(name = "OwlPermanentVideoDelete") {
-            val result = OwlFileOperations.deleteVideos(this, selected)
-            selected.forEach { PlaybackHistory.clear(this, it) }
+        if (fileJob?.isActive == true) return
+        fileJob = lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val job = currentCoroutineContext()[Job]!!
+                OwlFileOperations.deleteVideos(this@FolderActivity, selected) { job.ensureActive() }
+            }
+            selected.forEach { PlaybackHistory.clear(this@FolderActivity, it) }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 adapter.clearSelection()
@@ -262,9 +273,13 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
 
     private fun performVideoMove(selected: List<MediaVideo>, destination: File) {
         Toast.makeText(this, "이동 중…", Toast.LENGTH_SHORT).show()
-        thread(name = "OwlVideoMove") {
-            val result = OwlFileOperations.moveVideos(this, selected, destination)
-            selected.forEach { PlaybackHistory.clear(this, it) }
+        if (fileJob?.isActive == true) return
+        fileJob = lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) {
+                val job = currentCoroutineContext()[Job]!!
+                OwlFileOperations.moveVideos(this@FolderActivity, selected, destination) { job.ensureActive() }
+            }
+            selected.forEach { PlaybackHistory.clear(this@FolderActivity, it) }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 adapter.clearSelection()

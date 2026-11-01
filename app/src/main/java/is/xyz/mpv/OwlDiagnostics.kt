@@ -21,6 +21,11 @@ object OwlDiagnostics {
         val states: MutableMap<String, Long> = mutableMapOf())
     private val frames = linkedMapOf<String, Frames>()
     private val samples = java.util.ArrayDeque<String>()
+    private val stoppers = linkedSetOf<() -> Unit>()
+    fun resetRuntime() {
+        stoppers.toList().forEach { it() }; stoppers.clear()
+        synchronized(this) { frames.clear(); samples.clear() }
+    }
     fun enabled(context: Context) = context.getSharedPreferences(PREFS, 0).getBoolean("enabled", false)
     fun setEnabled(context: Context, value: Boolean) {
         context.getSharedPreferences(PREFS, 0).edit().putBoolean("enabled", value).apply()
@@ -59,10 +64,18 @@ object OwlDiagnostics {
                 handler.postDelayed(this, 1000)
             }
         }
+        val stop: () -> Unit = {
+            active = false
+            handler.removeCallbacks(poll)
+            tracker?.isTrackingEnabled = false
+            tracker = null
+            recycler?.removeOnScrollListener(scrollListener)
+        }
         owner.lifecycle.addObserver(object : DefaultLifecycleObserver {
             override fun onStart(owner: LifecycleOwner) {
                 if (!enabled(activity)) return
                 active = true
+                stoppers.add(stop)
                 recycler?.addOnScrollListener(scrollListener)
                 tracker = JankStats.createAndTrack(activity.window) { data ->
                     val state = listOfNotNull(
@@ -80,18 +93,13 @@ object OwlDiagnostics {
                 }
                 if (playbackReady != null) handler.post(poll)
             }
-            override fun onStop(owner: LifecycleOwner) {
-                active = false
-                handler.removeCallbacks(poll)
-                tracker?.isTrackingEnabled = false
-                tracker = null
-                recycler?.removeOnScrollListener(scrollListener)
-            }
+            override fun onStop(owner: LifecycleOwner) { stop(); stoppers.remove(stop) }
+            override fun onDestroy(owner: LifecycleOwner) { stop(); stoppers.remove(stop) }
         })
     }
 
     @Synchronized fun report(): String = buildString {
-        append("Owl 0.5.0 diagnostics\nUI frame statistics (not video drops):\n")
+        append("Owl " + BuildConfig.VERSION_NAME + " diagnostics\nUI frame statistics (not video drops):\n")
         frames.forEach { (screen, f) ->
             append(String.format(Locale.US, "%s: frames=%d, jank=%d (%.2f%%), longest=%.2f ms\n",
                 screen, f.total, f.jank, if (f.total == 0L) 0.0 else f.jank * 100.0 / f.total, f.longestNs / 1e6))
