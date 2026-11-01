@@ -37,6 +37,15 @@
             android:textColor="?android:attr/textColorPrimary" />
 
         <ImageButton
+            android:id="@+id/videoSearchButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:contentDescription="현재 폴더 이하 검색"
+            android:src="@android:drawable/ic_menu_search"
+            app:tint="?android:attr/textColorPrimary" />
+
+        <ImageButton
             android:id="@+id/videoSortButton"
             android:layout_width="48dp"
             android:layout_height="48dp"

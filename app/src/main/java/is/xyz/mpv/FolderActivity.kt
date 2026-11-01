@@ -4,6 +4,7 @@ import android.app.AlertDialog
 import android.content.Intent
 import android.os.Bundle
 import android.view.View
+import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
@@ -20,7 +21,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.isActive
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.currentCoroutineContext
 
@@ -50,7 +50,6 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
         if (result.data != null) {
             val playedIndex = result.data!!.getIntExtra("playlist_index", -1)
             val video = activePlaylist.getOrNull(playedIndex) ?: fallbackVideo
-            activePlaylist = emptyList()
             val position = result.data!!.getIntExtra("position", -1)
             val duration = result.data!!.getIntExtra("duration", -1)
             if (video != null && position >= 0) {
@@ -62,6 +61,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
                 )
             }
         }
+        activePlaylist = emptyList()
         adapter.refreshProgress()
     }
 
@@ -95,6 +95,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
 
         findViewById<TextView>(R.id.folderScreenTitle).text = folderName
         findViewById<ImageButton>(R.id.backButton).setOnClickListener { finish() }
+        findViewById<ImageButton>(R.id.videoSearchButton).setOnClickListener { showSearch() }
         findViewById<ImageButton>(R.id.videoSortButton).setOnClickListener { showSortMenu() }
 
         findViewById<View>(R.id.videoSelectionClose).setOnClickListener { adapter.clearSelection() }
@@ -176,6 +177,35 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     private fun applySort() {
         displayedVideos = MediaRules.sortVideos(currentVideos, sortMode)
         adapter.submit(displayedVideos)
+    }
+
+    private fun showSearch() {
+        val input = EditText(this).apply {
+            hint = "파일 또는 폴더 이름"
+            setSingleLine(true)
+        }
+        AlertDialog.Builder(this)
+            .setTitle("현재 폴더 이하 검색")
+            .setView(input)
+            .setPositiveButton("검색") { _, _ ->
+                val query = input.text.toString().trim()
+                if (query.isEmpty()) return@setPositiveButton
+                if (!folderKey.startsWith(File.separator)) {
+                    Toast.makeText(this, "이 저장소에서는 현재 폴더의 직접 영상만 검색할 수 있습니다.", Toast.LENGTH_LONG).show()
+                    val matched = currentVideos.filter { it.title.contains(query, ignoreCase = true) }
+                    displayedVideos = MediaRules.sortVideos(matched, sortMode)
+                    adapter.submit(displayedVideos)
+                    emptyText.visibility = if (displayedVideos.isEmpty()) View.VISIBLE else View.GONE
+                    if (displayedVideos.isEmpty()) emptyText.text = "검색 결과가 없습니다."
+                    return@setPositiveButton
+                }
+                startActivity(Intent(this, StorageBrowserActivity::class.java).apply {
+                    putExtra(StorageBrowserActivity.EXTRA_ROOT_PATH, folderKey)
+                    putExtra(StorageBrowserActivity.EXTRA_QUERY, query)
+                })
+            }
+            .setNegativeButton("취소", null)
+            .show()
     }
 
     private fun showSortMenu() {

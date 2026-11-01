@@ -1,0 +1,78 @@
+package `is`.xyz.mpv
+
+import java.nio.file.Files
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
+import org.junit.Test
+
+class StorageBrowserTest {
+    @Test
+    fun containsPathDoesNotAcceptSiblingPrefix() {
+        assertTrue(StorageBrowser.containsPath("/storage/ABCD", "/storage/ABCD"))
+        assertTrue(StorageBrowser.containsPath("/storage/ABCD", "/storage/ABCD/Movies/a.mp4"))
+        assertFalse(StorageBrowser.containsPath("/storage/ABCD", "/storage/ABCD2/Movies/a.mp4"))
+        assertFalse(StorageBrowser.containsPath("/storage/ABCD", "/storage/ABC"))
+    }
+
+    @Test
+    fun filterFoldersKeepsOnlySelectedStorageTree() {
+        val internal = MediaFolder(
+            key = "/storage/emulated/0/Movies",
+            name = "Movies",
+            videos = mutableListOf(video("/storage/emulated/0/Movies/a.mp4")),
+            storageLabel = "내부 저장소"
+        )
+        val external = MediaFolder(
+            key = "/storage/ABCD/Movies",
+            name = "Movies",
+            videos = mutableListOf(video("/storage/ABCD/Movies/b.mp4")),
+            storageLabel = "외장 저장소"
+        )
+
+        assertEquals(listOf(internal, external), StorageBrowser.filterFolders(listOf(internal, external), null))
+        assertEquals(listOf(internal), StorageBrowser.filterFolders(listOf(internal, external), "/storage/emulated/0"))
+        assertEquals(listOf(external), StorageBrowser.filterFolders(listOf(internal, external), "/storage/ABCD"))
+    }
+
+    @Test
+    fun rootForPathChoosesMostSpecificContainingRoot() {
+        val roots = listOf(
+            StorageRoot("전체", "/storage", false),
+            StorageRoot("USB", "/storage/ABCD", false)
+        )
+        assertEquals("/storage/ABCD", StorageBrowser.rootForPath(roots, "/storage/ABCD/Movies")?.path)
+    }
+
+    @Test
+    fun recursiveFolderSearchIsScopedToCurrentLocation() = runBlocking {
+        val root = Files.createTempDirectory("owl-browser").toFile()
+        try {
+            val inside = root.resolve("Movies/Target Folder").apply { mkdirs() }
+            root.resolve("Other/Target Outside").apply { mkdirs() }
+            val storage = StorageRoot("Test", root.canonicalPath, true)
+            val result = StorageBrowser.search(
+                listOf(storage),
+                root.resolve("Movies").canonicalPath,
+                "target"
+            )
+
+            assertFalse(result.truncated)
+            assertEquals(1, result.entries.size)
+            assertEquals(inside.canonicalPath, result.entries.single().path)
+            assertEquals(BrowserEntryKind.DIRECTORY, result.entries.single().kind)
+        } finally {
+            root.deleteRecursively()
+        }
+    }
+
+    private fun video(path: String) = MediaVideo(
+        title = path.substringAfterLast('/'),
+        path = path,
+        uri = "file://$path",
+        durationMs = 0L,
+        width = 0,
+        height = 0
+    )
+}
