@@ -84,7 +84,8 @@ internal object Utils {
             "</fontconfig>"
         )
         try {
-            configFile.writeText(parts.joinToString("\n"))
+            val content = parts.joinToString("\n")
+            if (!configFile.exists() || configFile.readText() != content) configFile.writeText(content)
         } catch (e: IOException) {
             Log.w(TAG, "Failed to write fonts.conf", e)
         }

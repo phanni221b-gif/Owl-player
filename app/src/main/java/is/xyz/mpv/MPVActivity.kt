@@ -537,7 +537,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
                 putInt("last_screen_brightness", lastScreenBrightness)
             else
                 remove("last_screen_brightness")
-            commit()
+            apply()
         }
     }
 

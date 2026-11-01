@@ -98,7 +98,8 @@ class ApvSettingsActivity : AppCompatActivity(R.layout.activity_apv_settings) {
             if (!prefs.contains("display_media_title")) edit.putBoolean("display_media_title", true)
             if (!prefs.contains("bottom_controls")) edit.putBoolean("bottom_controls", true)
             if (!prefs.contains("playlist_exit_warning")) edit.putBoolean("playlist_exit_warning", false)
-            edit.putBoolean("video_fastdecode", false).apply()
+            if (!prefs.contains("video_fastdecode")) edit.putBoolean("video_fastdecode", false)
+            edit.apply()
 
             if (!prefs.contains("gesture_tap_left") ||
                 !prefs.contains("gesture_tap_center") ||
