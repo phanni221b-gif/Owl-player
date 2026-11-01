@@ -42,7 +42,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private val adapter = FolderAdapter(::openFolder, ::onFolderSelectionChanged)
     private lateinit var scans: LifecycleScanController<MediaFolder>
     private var fileJob: Job? = null
-    private var rootsJob: Job? = null
+    private lateinit var rootScans: LifecycleScanController<StorageRoot>
     private var foregroundEntries = 0
     private var waitingForAllFiles = false
     private var currentFolders: List<MediaFolder> = emptyList()
@@ -74,7 +74,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         OwlSession.prepareLauncher(this, savedInstanceState == null && isTaskRoot && intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER))
-        OwlSession.attach(this) { if (::scans.isInitialized) scans.close(); fileJob?.cancel(); rootsJob?.cancel() }
+        OwlSession.attach(this) { if (::scans.isInitialized) scans.close(); fileJob?.cancel(); if (::rootScans.isInitialized) rootScans.close() }
 
         SystemBarInsets.apply(findViewById(R.id.mainRoot))
         ApvSettingsActivity.ensureDefaults(this)
@@ -118,7 +118,25 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
             allowed = { !OwlSession.ending && !isFinishing && !isDestroyed },
             scan = { force, emit -> MediaLibrary.scan(applicationContext, force, emit) },
             data = ::displayFolders, stateChanged = ::renderScanState)
-        StorageChangeObserver(this, lifecycleScope) { refreshStorageRoots(true); loadFolders(force = true) }
+        rootScans = LifecycleScanController(this, lifecycleScope, "storage roots",
+            allowed = { !OwlSession.ending && !isFinishing && !isDestroyed },
+            scan = { _, _ ->
+                val app = applicationContext
+                kotlinx.coroutines.withTimeoutOrNull(8_000) { rootsWorker.query({}) { StorageBrowser.roots(app) } }
+                    ?: throw java.util.concurrent.TimeoutException("storage metadata deadline")
+            }, data = rootData@{ roots ->
+                // A mount/unmount request makes the in-flight inventory obsolete.
+                if (rootScans.replacementQueued) return@rootData
+                val changed = roots.map { it.path }.toSet() != storageRoots.map { it.path }.toSet()
+                storageRoots = roots
+                selectedStoragePath = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
+                    .getString(StorageBrowserActivity.KEY_STORAGE_ROOT, null)
+                validateSelectedStorage(fallbackToPrimary = selectedStoragePath != null)
+                updateStorageButton()
+                if (currentFolders.isNotEmpty()) applySort()
+                if (changed && foregroundEntries > 1 && scans.completed) loadFolders(force = true)
+            }, stateChanged = {})
+        StorageChangeObserver(this, lifecycleScope) { refreshStorageRoots(force = true); loadFolders(force = true) }
         ensureAccess()
     }
 
@@ -127,8 +145,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         foregroundEntries++
         selectedStoragePath = getSharedPreferences(PREFS_UI, MODE_PRIVATE)
             .getString(StorageBrowserActivity.KEY_STORAGE_ROOT, null)
-        val hadSavedSelection = selectedStoragePath != null
-        refreshStorageRoots(hadSavedSelection)
+        refreshStorageRoots()
         updateStorageButton()
         if (waitingForAllFiles && hasAllFilesAccess()) {
             waitingForAllFiles = false
@@ -139,26 +156,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         else if (currentFolders.isNotEmpty()) applySort()
     }
 
-    private fun refreshStorageRoots(fallbackToPrimary: Boolean) {
-        if (rootsJob?.isActive == true) return
-        val app = applicationContext
-        rootsJob = lifecycleScope.launch {
-            val roots = try {
-                kotlinx.coroutines.withTimeoutOrNull(8_000) { rootsWorker.query({}) { StorageBrowser.roots(app) } }
-            } catch (cancel: kotlinx.coroutines.CancellationException) { throw cancel }
-            catch (_: Exception) { null }
-            if (OwlSession.ending || !lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED)) return@launch
-            if (roots != null) {
-                val changed = roots.map { it.path }.toSet() != storageRoots.map { it.path }.toSet()
-                storageRoots = roots
-                // A mount while backgrounded has no foreground broadcast; rescan only on an inventory change.
-                if (changed && foregroundEntries > 1 && scans.completed) loadFolders(force = true)
-            }
-            validateSelectedStorage(fallbackToPrimary)
-            updateStorageButton()
-            if (currentFolders.isNotEmpty()) applySort()
-        }
-    }
+    private fun refreshStorageRoots(force: Boolean = false) = rootScans.request(force)
 
     private fun validateSelectedStorage(fallbackToPrimary: Boolean) {
         val selected = selectedStoragePath ?: return

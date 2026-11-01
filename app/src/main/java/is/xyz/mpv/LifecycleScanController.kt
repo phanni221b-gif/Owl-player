@@ -19,6 +19,7 @@ internal class LifecycleScanController<T>(
     private val state = LifecycleScanState()
     private var job: Job? = null
     val running get() = state.active != null
+    val replacementQueued get() = state.pendingForce == true
     val completed get() = state.phase == LifecycleScanState.Phase.CONTENT || state.phase == LifecycleScanState.Phase.EMPTY
     private val record = OwlDiagnostics.storageRecorder()
     init { owner.lifecycle.addObserver(this) }
