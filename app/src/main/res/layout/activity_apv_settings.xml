@@ -129,7 +129,7 @@
             <CheckBox android:id="@+id/neuralEnabled" android:layout_width="0dp" android:layout_weight="1"
                 android:layout_height="wrap_content" android:minHeight="64dp" android:text="Neural · GPU" />
             <ImageButton android:id="@+id/neuralResolutionSettings" android:layout_width="48dp" android:layout_height="48dp"
-                android:src="@android:drawable/ic_menu_manage" android:contentDescription="Neural 적용 해상도 설정"
+                android:src="@drawable/ic_settings_black_24dp" android:tint="?android:attr/textColorPrimary" android:contentDescription="Neural 적용 해상도 설정"
                 android:background="?attr/selectableItemBackgroundBorderless" />
         </LinearLayout>
         <LinearLayout android:layout_width="match_parent" android:layout_height="wrap_content"
@@ -137,7 +137,7 @@
             <CheckBox android:id="@+id/aiMaxEnabled" android:layout_width="0dp" android:layout_weight="1"
                 android:layout_height="wrap_content" android:minHeight="64dp" android:text="AI Max · GPU" />
             <ImageButton android:id="@+id/aiMaxResolutionSettings" android:layout_width="48dp" android:layout_height="48dp"
-                android:src="@android:drawable/ic_menu_manage" android:contentDescription="AI Max 적용 해상도 설정"
+                android:src="@drawable/ic_settings_black_24dp" android:tint="?android:attr/textColorPrimary" android:contentDescription="AI Max 적용 해상도 설정"
                 android:background="?attr/selectableItemBackgroundBorderless" />
         </LinearLayout>
         <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
