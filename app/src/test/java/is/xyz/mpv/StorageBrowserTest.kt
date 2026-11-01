@@ -1,5 +1,7 @@
 package `is`.xyz.mpv
 
+import java.nio.file.Files
+import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -41,6 +43,28 @@ class StorageBrowserTest {
             StorageRoot("USB", "/storage/ABCD", false)
         )
         assertEquals("/storage/ABCD", StorageBrowser.rootForPath(roots, "/storage/ABCD/Movies")?.path)
+    }
+
+    @Test
+    fun recursiveFolderSearchIsScopedToCurrentLocation() = runBlocking {
+        val root = Files.createTempDirectory("owl-browser").toFile()
+        try {
+            val inside = root.resolve("Movies/Target Folder").apply { mkdirs() }
+            root.resolve("Other/Target Outside").apply { mkdirs() }
+            val storage = StorageRoot("Test", root.canonicalPath, true)
+            val result = StorageBrowser.search(
+                listOf(storage),
+                root.resolve("Movies").canonicalPath,
+                "target"
+            )
+
+            assertFalse(result.truncated)
+            assertEquals(1, result.entries.size)
+            assertEquals(inside.canonicalPath, result.entries.single().path)
+            assertEquals(BrowserEntryKind.DIRECTORY, result.entries.single().kind)
+        } finally {
+            root.deleteRecursively()
+        }
     }
 
     private fun video(path: String) = MediaVideo(
