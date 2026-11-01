@@ -45,6 +45,12 @@ class LifecycleScanStateTest {
         val b = s.request()!!; s.complete(b, 0, failed = true)
         assertEquals(LifecycleScanState.Phase.ERROR, s.phase); assertNotNull(s.request(true))
     }
+    @Test fun ownershipCancellationBeforeStopRetainsForegroundRetryAndForce() {
+        val s = LifecycleScanState(); s.foreground(); val first = s.request(true)!!
+        s.cancelled(first); assertEquals(LifecycleScanState.Phase.CANCELLED,s.phase)
+        s.background(); val next = s.foreground()!!
+        assertTrue(next.force); assertNotEquals(first.generation,next.generation); assertNull(s.foreground())
+    }
     @Test fun closeDiscardsDeferredAndActiveSessionWork() {
         val s = LifecycleScanState(); s.request(true); s.close(); assertNull(s.foreground())
         val r = s.request()!!; s.close(); assertFalse(s.owns(r)); assertEquals(LifecycleScanState.Phase.IDLE, s.phase)

@@ -33,7 +33,9 @@ internal class LifecycleScanState {
     fun cancelled(request: Request) {
         if (active != request) return
         active = null
-        phase = if (pendingForce != null) Phase.PENDING else Phase.CANCELLED
+        // A newer screen can take library ownership before this Activity receives ON_STOP.
+        pendingForce = (pendingForce ?: false) || request.force
+        phase = Phase.CANCELLED
     }
     fun close() { started = false; active = null; pendingForce = null; phase = Phase.IDLE }
     private fun takePending(): Request? {

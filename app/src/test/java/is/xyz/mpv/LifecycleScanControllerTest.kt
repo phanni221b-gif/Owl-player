@@ -76,6 +76,15 @@ class LifecycleScanControllerTest {
         a.gates[1].complete(listOf("content")); drain()
         c.pause().stop().destroy()
     }
+    @Test fun libraryCancellationBeforeActivityStopStillResumesOnReturn() {
+        val c = Robolectric.buildActivity(ProbeActivity::class.java).create().start().resume(); drain()
+        val a = c.get(); a.gates[0].cancel(); drain()
+        assertEquals(LifecycleScanState.Phase.CANCELLED,a.states.last())
+        c.pause().stop().restart().start().resume(); drain(); assertEquals(2,a.forces.size)
+        a.gates[1].complete(listOf("recovered")); drain()
+        assertEquals(listOf("recovered"),a.snapshots.last())
+        c.pause().stop().destroy()
+    }
     @Test fun sourceBoundarySettingsSnapshotReflectsNewNeuralAndMaxPreferences() {
         val context = org.robolectric.RuntimeEnvironment.getApplication()
         val prefs = android.preference.PreferenceManager.getDefaultSharedPreferences(context)
