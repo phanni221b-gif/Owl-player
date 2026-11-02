@@ -20,3 +20,18 @@ AI Max → Neural → Ultra → selected base fallback remains in place. These d
 5. Confirm playback continues after fallback and report frame/decoder/delayed drops, A/V sync and renderer average time. Performance, heat and battery remain physical-device tests.
 
 Use the returned error category/code to decide whether precision, allocation, format, resource pressure or another path actually needs changing. If the category remains unknown, add a targeted probe rather than guessing a compatibility patch.
+
+## Physical diagnostic.1 result and diagnostic.2 follow-up
+
+The returned physical reports show compile errors at generated GLSL line 81 for AI Max and Neural, with no retained compiler code or specific offending symbol. Their final source metadata differs (480x268 at 25 fps vs 1920x1080 at 25 fps), so this is shared-line evidence across two sources, not a controlled identical-clip comparison. It identifies a common compile failure but cannot uniquely identify an Adreno precision/format/glue bug. The compiler line refers to generated source, not the asset's line 81. No production compatibility patch is justified yet.
+
+The pinned libplacebo source confirms that failed program creation dumps numbered vertex/fragment/compute source at error severity. Diagnostic.1 incorrectly classified these dump lines as driver failures; they crowded the 160-entry ring and could obscure detailed reasons. Diagnostic.2 excludes dump headers/lines from fallback classification, removes generic error-level text without actual failure terms, preserves fixed compiler terms (reserved word, undeclared identifier, unexpected token, overload/type mismatch, etc.), and records only a five-line window around up to four compiler locations per attempt. The window retains allowlisted GLSL vocabulary; arbitrary identifiers, numbers, strings, comments and paths are redacted. Raw messages are still not retained. Generation fencing and normal fallback remain.
+
+All 44 unmodified hook bodies also pass 132 standalone GLSL ES 300/310/320 syntax/type compilations using official glslang 16.6.0 locally. CI adds glslang-tools checks alongside unchanged full Mesa framebuffer rendering. The standalone harness supplies simple 2D bindings; it does not reproduce Android external-texture glue or prove Adreno compatibility.
+
+Next device run: diagnostic.2, same known SDR clip in both modes; clear diagnostics between runs. Return the full safe report including generated_source and terms. These fields should identify the actual line/token rather than requiring raw logs. The actual shader/driver cause, confirmed device correction and final 0.6.1 release remain pending that evidence.
+
+Pinned-source references:
+- https://github.com/haasn/libplacebo/blob/c4de47cd94af6ce15573debe84306e01bca33996/src/gpu.c (log_shader_sources)
+- https://github.com/haasn/libplacebo/blob/c4de47cd94af6ce15573debe84306e01bca33996/src/log.c (pl_msg_source numbering)
+- https://github.com/haasn/libplacebo/blob/c4de47cd94af6ce15573debe84306e01bca33996/src/opengl/gpu_pass.c (GL compile log)

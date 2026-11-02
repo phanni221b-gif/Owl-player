@@ -38,6 +38,8 @@ internal class QualityPlaybackController(context: Context, private val selectRen
     private var shaderStatus = "not_requested"
     private var renderer: RenderPassSummary? = null
     private val recordRenderer = OwlDiagnostics.rendererRecorder()
+    private val recordSource = OwlDiagnostics.rendererSourceRecorder()
+    private val sourceTrace = RendererSourceTrace()
     @Volatile private var logContext = RendererAttemptContext(0,0,null,RendererAttemptPhase.IDLE)
     private var pendingFailure: Pair<RendererAttemptContext,RendererFailure>? = null
     private val failureFlush = Runnable {
@@ -195,10 +197,15 @@ internal class QualityPlaybackController(context: Context, private val selectRen
         if (closed) return
         val context = logContext
         if ((context.mode ?: QualityMode.BALANCED) < QualityMode.ULTRA || context.phase == RendererAttemptPhase.IDLE) return
-        val failure = RendererFailure.classify(prefix,level,text) ?: return
-        // The closure only captures fixed enums/numbers; never raw text/prefix/path.
+        if (level > 30 || !listOf("gpu","libplacebo","opengl").any { prefix.lowercase().contains(it) }) return
+        val failure = RendererFailure.classify(prefix,level,text)
+        val sourceLines = sourceTrace.accept(context,text,failure)
+        if (failure == null && sourceLines.isEmpty()) return
+        // Only fixed failure fields and allowlisted source tokens cross to the UI; never raw text/prefix/path.
         handler.post {
             if (closed || context.source != generation || context.attempt != attemptNumber) return@post
+            sourceLines.forEach { recordSource(context,it) }
+            if (failure == null) return@post
             recordRenderer(context,failure)
             val previous = pendingFailure
             if (previous == null || failure.detailScore > previous.second.detailScore) pendingFailure = context to failure

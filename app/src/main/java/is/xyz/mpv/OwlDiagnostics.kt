@@ -31,6 +31,15 @@ object OwlDiagnostics {
             }
         } }
     }
+    internal fun rendererSourceRecorder(): (RendererAttemptContext, String) -> Unit {
+        val epoch = runtimeEpoch
+        return { context, safeLine -> synchronized(this) {
+            if (epoch == runtimeEpoch) {
+                if (rendererErrors.size >= 160) rendererErrors.removeFirst()
+                rendererErrors.addLast(SystemClock.elapsedRealtime().toString() + " ms: " + context.summary() + ", " + safeLine)
+            }
+        } }
+    }
     private val storageEvents = java.util.ArrayDeque<String>()
     @Volatile private var quality = "No source metadata yet"
     fun qualitySummary(summary: String) { quality = summary }
