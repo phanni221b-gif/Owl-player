@@ -24,7 +24,7 @@ internal data class RendererFailure(
         (if (line != null) 2 else 0) + (if (compilerCode != null) 3 else 0) +
         (if (reason in setOf(Reason.SAMPLER_PRECISION_MISSING,Reason.FLOAT_PRECISION_MISSING,Reason.TEMPORARY_REGISTER_LIMIT,Reason.SAMPLER_LIMIT)) 5 else 0)
     companion object {
-        private val compilerLocation = Regex("(?im)^\\s*(?:ERROR|WARNING)\\s*:\\s*\\d{1,5}\\s*:\\s*(\\d{1,6})\\s*:")
+        private val compilerLocation = Regex("(?im)^(?:\\s*shader compile log \\(status=0\\):)?\\s*(?:ERROR|WARNING)\\s*:\\s*\\d{1,5}\\s*:\\s*(\\d{1,6})\\s*:")
         private val adrenoLocation = Regex("(?im)^\\s*\\d{1,5}\\s*:\\s*(\\d{1,6})\\s*:\\s*[SC]\\d{4}\\b")
         private val compilerNumber = Regex("(?i)(?:\\b(?:error|warning)\\s*:?\\s*|^\\s*\\d{1,5}:\\d{1,6}:\\s*)([SC]\\d{4})\\b")
         fun classify(prefix: String, level: Int, message: String): RendererFailure? {

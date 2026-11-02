@@ -44,7 +44,8 @@ class RendererSourceTraceTest {
         assertTrue(RendererSourceTrace.tokens("float color; ".repeat(10000)).length < 1000)
     }
     @Test fun actualCompilerTermsSurviveWithoutRawMessages() {
-        val e = error("ERROR: 0:81: syntax error, unexpected identifier, expecting semicolon /private/movie")
+        val e = error("shader compile log (status=0): ERROR: 0:81: syntax error, unexpected identifier, expecting semicolon /private/movie")
+        assertEquals(81,e.line)
         assertTrue(e.terms.containsAll(setOf(RendererFailure.Term.SYNTAX_ERROR,RendererFailure.Term.UNEXPECTED_TOKEN,RendererFailure.Term.EXPECTED_TOKEN)))
         assertFalse(e.summary().contains("private"))
         assertTrue(error("ERROR: 0:81: reserved word").terms.contains(RendererFailure.Term.RESERVED_WORD))
