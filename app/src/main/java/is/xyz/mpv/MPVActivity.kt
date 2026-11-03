@@ -2160,6 +2160,9 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     }
 
     override fun event(eventId: Int) {
+        if (eventId == MpvEvent.MPV_EVENT_PLAYBACK_RESTART && !OwlSession.ending) {
+            MPVLib.getPropertyString("path")?.let { SeenVideos.markPlayed(applicationContext, it) }
+        }
         if (eventId == MpvEvent.MPV_EVENT_END_FILE) {
             psc.eof()
             updateMediaSession()

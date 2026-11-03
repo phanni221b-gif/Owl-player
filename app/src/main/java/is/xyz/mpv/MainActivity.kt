@@ -39,7 +39,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     private lateinit var swipeRefresh: SwipeRefreshLayout
     private lateinit var browseControls: View
     private lateinit var storageButton: Button
-    private val adapter = FolderAdapter(::openFolder, ::onFolderSelectionChanged)
+    private val adapter = FolderAdapter(this, lifecycleScope, ::openFolder, ::onFolderSelectionChanged)
     private lateinit var scans: LifecycleScanController<MediaFolder>
     private var fileJob: Job? = null
     private lateinit var rootScans: LifecycleScanController<StorageRoot>
@@ -74,7 +74,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         OwlSession.prepareLauncher(this, savedInstanceState == null && isTaskRoot && intent.action == Intent.ACTION_MAIN && intent.hasCategory(Intent.CATEGORY_LAUNCHER))
-        OwlSession.attach(this) { if (::scans.isInitialized) scans.close(); fileJob?.cancel(); if (::rootScans.isInitialized) rootScans.close() }
+        OwlSession.attach(this) { if (::scans.isInitialized) scans.close(); fileJob?.cancel(); if (::rootScans.isInitialized) rootScans.close(); adapter.cancelPending() }
 
         SystemBarInsets.apply(findViewById(R.id.mainRoot))
         ApvSettingsActivity.ensureDefaults(this)
@@ -154,6 +154,11 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         recycler.post { updateGridSpan() }
         if (scans.completed) displayFolders(MediaLibrary.cache)
         else if (currentFolders.isNotEmpty()) applySort()
+    }
+
+    override fun onStop() {
+        adapter.cancelPending()
+        super.onStop()
     }
 
     private fun refreshStorageRoots(force: Boolean = false) = rootScans.request(force)
