@@ -31,7 +31,7 @@ jobs:
         run: |
           VERSION=$(sed -n 's/.*versionName "\([^"]*\)".*/\1/p' app/build.gradle | head -1)
           CODE=$(sed -n 's/.*versionCode \([0-9]*\).*/\1/p' app/build.gradle | head -1)
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-diagnostic\.[0-9]+)?$ ]]
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then test "$GITHUB_REF_NAME" = "v$VERSION"; fi
           echo "OWL_VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "OWL_ARM64_CODE=$((CODE + 2000))" >> "$GITHUB_ENV"

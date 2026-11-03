@@ -37,6 +37,16 @@ internal class QualityPlaybackController(context: Context, private val selectRen
     private var effective = configuration.base
     private var shaderStatus = "not_requested"
     private var renderer: RenderPassSummary? = null
+    private val recordRenderer = OwlDiagnostics.rendererRecorder()
+    private val recordSource = OwlDiagnostics.rendererSourceRecorder()
+    private val sourceTrace = RendererSourceTrace()
+    @Volatile private var logContext = RendererAttemptContext(0,0,null,RendererAttemptPhase.IDLE)
+    private var pendingFailure: Pair<RendererAttemptContext,RendererFailure>? = null
+    private val failureFlush = Runnable {
+        val item = pendingFailure; pendingFailure = null
+        if (item != null) downgrade(item.first.source,item.first.attempt,item.second.fixedCode())
+    }
+    private fun phase(value: RendererAttemptPhase) { logContext = RendererAttemptContext(generation,attemptNumber,attempted,value) }
     private val geometryCheck = Runnable {
         val mode = attempted
         if (!closed && decided && mode?.neural == true && shaderStatus != "model_loading")
@@ -53,6 +63,7 @@ internal class QualityPlaybackController(context: Context, private val selectRen
             when (eventId) {
                 MPVLib.MpvEvent.MPV_EVENT_START_FILE -> {
                     generation++; attemptNumber++; metadataJob?.cancel(); confirmation?.cancel(); handler.removeCallbacks(geometryCheck)
+                    pendingFailure = null; handler.removeCallbacks(failureFlush); phase(RendererAttemptPhase.IDLE)
                     RendererInspection.reset()
                     decided = false; deciding = false; source = null; fallback = null; attempted = null
                     val previous = configuration
@@ -72,6 +83,7 @@ internal class QualityPlaybackController(context: Context, private val selectRen
                 MPVLib.MpvEvent.MPV_EVENT_VIDEO_RECONFIG -> decideWhenReady()
                 MPVLib.MpvEvent.MPV_EVENT_END_FILE -> {
                     generation++; attemptNumber++; metadataJob?.cancel(); confirmation?.cancel(); attempted = null
+                    pendingFailure = null; handler.removeCallbacks(failureFlush); phase(RendererAttemptPhase.IDLE)
                 }
             }
         }
@@ -114,6 +126,7 @@ internal class QualityPlaybackController(context: Context, private val selectRen
             if (rejected != null) { chain.fail(rejected); continue }
             attempted = mode; attemptNumber++; RendererInspection.reset()
             val attempt = attemptNumber
+            pendingFailure = null; handler.removeCallbacks(failureFlush); phase(RendererAttemptPhase.OPTIONS)
             confirmation?.cancel()
             if (!managedQuality && mode == configuration.base) {
                 effective = mode; shaderStatus = "not_requested"; report(); return
@@ -125,18 +138,19 @@ internal class QualityPlaybackController(context: Context, private val selectRen
             }
             if (failedOption != null) { chain.fail("option_rejected_" + failedOption); shaderStatus = "option_failed"; report(); continue }
             effective = if (mode.neural) QualityMode.ULTRA else mode
-            if (!mode.neural) { shaderStatus = "not_requested"; report(); return }
-            shaderStatus = "model_loading"; report()
+            if (!mode.neural) { shaderStatus = "not_requested"; phase(RendererAttemptPhase.BASELINE); report(); return }
+            shaderStatus = "model_loading"; phase(RendererAttemptPhase.MODEL_INSTALL); report()
             val model = NeuralModel.forMode(mode)
             val file = try { NeuralAssets.install(app, model) }
             catch (cancel: CancellationException) { throw cancel }
             catch (_: Exception) { chain.fail("model_integrity_or_install_failed"); shaderStatus = "load_failed"; report(); continue }
             scope.coroutineContext.ensureActive()
             if (closed || token != generation || attempt != attemptNumber) return
+            phase(RendererAttemptPhase.SHADER_SUBMITTED)
             if (MPVLib.setOptionString("glsl-shaders", file.absolutePath) < 0) {
                 chain.fail("shader_option_rejected"); shaderStatus = "load_failed"; report(); continue
             }
-            shaderStatus = "awaiting_render_confirmation"; report()
+            shaderStatus = "awaiting_render_confirmation"; phase(RendererAttemptPhase.RENDER_CONFIRM); report()
             startConfirmation(token, attempt, mode)
             return
         }
@@ -161,7 +175,7 @@ internal class QualityPlaybackController(context: Context, private val selectRen
                 RendererInspection.request()
                 renderer = RenderPassSummary.parse(RendererInspection.latest())
                 val matched = if (mode == QualityMode.AI_MAX) renderer?.neural16 == true else renderer?.neural8 == true
-                if (matched) { effective = mode; shaderStatus = "loaded_and_rendered"; report(); return@launch }
+                if (matched) { effective = mode; shaderStatus = "loaded_and_rendered"; phase(RendererAttemptPhase.CONFIRMED); report(); return@launch }
             }
             downgrade(token, attempt, "shader_render_confirmation_failed")
         }
@@ -180,17 +194,22 @@ internal class QualityPlaybackController(context: Context, private val selectRen
         scope.launch { applyCandidate(token) }
     }
     override fun logMessage(prefix: String, level: Int, text: String) {
-        if (closed || level > MPVLib.MpvLogLevel.MPV_LOG_LEVEL_WARN) return
-        val lower = text.lowercase()
-        val shaderError = (prefix.contains("gpu") || prefix.contains("libplacebo")) &&
-            listOf("shader", "glsl", "framebuffer", "render pass", "failed rendering", "failed dispatch", "gl_invalid_operation").any { lower.contains(it) } &&
-            (level <= MPVLib.MpvLogLevel.MPV_LOG_LEVEL_ERROR || lower.contains("failed") || lower.contains("error"))
-        if (!shaderError) return
-        val token = generation; val attempt = attemptNumber
-        // Raw renderer messages can contain private paths. Keep only a fixed reason code.
+        if (closed) return
+        val context = logContext
+        if ((context.mode ?: QualityMode.BALANCED) < QualityMode.ULTRA || context.phase == RendererAttemptPhase.IDLE) return
+        if (level > 30 || !listOf("gpu","libplacebo","opengl").any { prefix.lowercase().contains(it) }) return
+        val failure = RendererFailure.classify(prefix,level,text)
+        val sourceLines = sourceTrace.accept(context,text,failure)
+        if (failure == null && sourceLines.isEmpty()) return
+        // Only fixed failure fields and allowlisted source tokens cross to the UI; never raw text/prefix/path.
         handler.post {
-            if ((attempted ?: QualityMode.BALANCED) >= QualityMode.ULTRA)
-                downgrade(token, attempt, "renderer_shader_error")
+            if (closed || context.source != generation || context.attempt != attemptNumber) return@post
+            sourceLines.forEach { recordSource(context,it) }
+            if (failure == null) return@post
+            recordRenderer(context,failure)
+            val previous = pendingFailure
+            if (previous == null || failure.detailScore > previous.second.detailScore) pendingFailure = context to failure
+            if (previous == null) handler.postDelayed(failureFlush,80) // retain detailed compiler lines after its generic banner
         }
     }
     private fun report() {
@@ -212,7 +231,7 @@ internal class QualityPlaybackController(context: Context, private val selectRen
     }
     fun close() {
         if (closed) return
-        closed = true; generation++; attemptNumber++
+        closed = true; generation++; attemptNumber++; phase(RendererAttemptPhase.IDLE)
         MPVLib.removeObserver(this); MPVLib.removeLogObserver(this); RendererInspection.detach()
         handler.removeCallbacksAndMessages(null); scope.cancel()
     }

@@ -212,4 +212,5 @@
     <!-- File picker -->
     <string name="nnf_name">Name</string>
     <string name="nnf_permission_external_write_denied">Permission to access file system denied</string>
+    <string name="folder_unseen_count">아직 보지 않은 영상 %1$d개</string>
 </resources>
