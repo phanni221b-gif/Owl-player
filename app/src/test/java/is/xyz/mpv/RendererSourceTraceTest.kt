@@ -26,6 +26,22 @@ class RendererSourceTraceTest {
         trace.accept(context,"fragment shader source:",null)
         assertTrue(trace.accept(context,"[ 81] float neural;",null).isEmpty())
     }
+    @Test fun generatedEvidenceSurvivesSubmissionPhaseChange() {
+        val trace = RendererSourceTrace()
+        val submitted = context.copy(phase = RendererAttemptPhase.SHADER_SUBMITTED)
+        trace.accept(submitted, "", error("ERROR: 0:81: syntax error"))
+        val lines = trace.accept(context, """
+            fragment shader source:
+            [  1] #version 310 es
+            [  2] uniform highp samplerExternalOES private_name;
+            [ 81] vec4 hook() { return vec4(dot(HOOKED_tex(HOOKED_pos).rgb, vec3(1)), 0, 0, 1); }
+        """.trimIndent(), null)
+        assertTrue(lines.any { it.contains("version=310") })
+        assertTrue(lines.any { it.contains("samplerExternalOES") })
+        assertTrue(lines.any { it.contains("role=main_rgb_to_luma") })
+        assertTrue(lines.any { it.contains("line=81") })
+        assertFalse(lines.any { it.contains("private_name") })
+    }
     @Test fun attemptsDoNotShareCompilerTargetsOrShaderStage() {
         val trace = RendererSourceTrace()
         trace.accept(context,"",error("ERROR: 0:81: syntax error"))

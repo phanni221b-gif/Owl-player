@@ -42,6 +42,7 @@ class RendererFailureTest {
     @Test fun nonRendererWarningsAndSuccessfulMessagesDoNotTriggerFallback() {
         assertNull(RendererFailure.classify("demux",20,"shader failed in /private/name"))
         assertNull(RendererFailure.classify("vo/gpu-next/libplacebo",30,"shader compiler warning: unused variable"))
+        assertNull(RendererFailure.classify("vo/gpu-next/libplacebo",30,"WARNING: 0:81: unused variable"))
         assertNull(RendererFailure.classify("vo/gpu-next/libplacebo",40,"shader compiled successfully"))
     }
     @Test fun rawPathsUrlsAndFilenamesCannotEscapeClassification() {
@@ -60,5 +61,16 @@ class RendererFailureTest {
     }
     @Test fun detailedCompilerLineOutranksGenericFailureForTheSameAttempt() {
         assertTrue(error("ERROR: 0:15: S0001: No precision specified for sampler2D").detailScore > error("Failed rendering frame").detailScore)
+    }
+    @Test fun secondaryPassFailureDoesNotInventALinkFailure() {
+        val build = error("Failed compiling/linking GLSL program")
+        val pass = error("Failed creating render pass for dispatch")
+        val compile = error("shader compile log (status=0): ERROR: 0:81: syntax error")
+        val link = error("shader link log (status=0): shader failed to link")
+        assertEquals(RendererFailure.Reason.PROGRAM_BUILD_FAILED, build.reason)
+        assertEquals(RendererFailure.Reason.PASS_CREATION_FAILED, pass.reason)
+        assertEquals(RendererFailure.Category.SHADER_LINK_ERROR, link.category)
+        assertTrue(compile.detailScore > link.detailScore && link.detailScore > build.detailScore)
+        assertNull(compile.compilerCode)
     }
 }

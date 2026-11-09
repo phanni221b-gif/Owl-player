@@ -40,6 +40,7 @@ internal class QualityPlaybackController(context: Context, private val selectRen
     private val recordRenderer = OwlDiagnostics.rendererRecorder()
     private val recordSource = OwlDiagnostics.rendererSourceRecorder()
     private val sourceTrace = RendererSourceTrace()
+    private var geometry = "unavailable"
     @Volatile private var logContext = RendererAttemptContext(0,0,null,RendererAttemptPhase.IDLE)
     private var pendingFailure: Pair<RendererAttemptContext,RendererFailure>? = null
     private val failureFlush = Runnable {
@@ -49,8 +50,16 @@ internal class QualityPlaybackController(context: Context, private val selectRen
     private fun phase(value: RendererAttemptPhase) { logContext = RendererAttemptContext(generation,attemptNumber,attempted,value) }
     private val geometryCheck = Runnable {
         val mode = attempted
-        if (!closed && decided && mode?.neural == true && shaderStatus != "model_loading")
-            startConfirmation(generation, attemptNumber, mode)
+        if (!closed && decided && mode?.neural == true && pendingFailure == null) {
+            val required = upscaleRequired()
+            when {
+                shaderStatus in setOf("bypassed_no_upscale", "awaiting_output_geometry") && required == true ->
+                    scope.launch { applyCandidate(generation) }
+                shaderStatus in setOf("awaiting_render_confirmation", "loaded_and_rendered") && required == false ->
+                    deferModel(false)
+                else -> report()
+            }
+        }
     }
     init {
         MPVLib.addObserver(this); MPVLib.addLogObserver(this); RendererInspection.attach()
@@ -58,6 +67,9 @@ internal class QualityPlaybackController(context: Context, private val selectRen
         MPVLib.observeProperty("video-zoom", MPVLib.MpvFormat.MPV_FORMAT_DOUBLE)
     }
     override fun event(eventId: Int) {
+        if (!closed && eventId == MPVLib.MpvEvent.MPV_EVENT_QUEUE_OVERFLOW) {
+            recordSource(logContext, "mpv_event_queue_overflow")
+        }
         handler.post {
             if (closed || OwlSession.ending) return@post
             when (eventId) {
@@ -69,7 +81,7 @@ internal class QualityPlaybackController(context: Context, private val selectRen
                     val previous = configuration
                     configuration = QualityPreferences.read(app)
                     managedQuality = managedQuality || configuration.needsGpuNext || configuration != previous
-                    effective = configuration.base; shaderStatus = "not_requested"; renderer = null
+                    effective = configuration.base; shaderStatus = "not_requested"; renderer = null; geometry = "unavailable"
                     if (managedQuality) MPVLib.setOptionString("glsl-shaders", "")
                     val wantGpuNext = configuration.needsGpuNext || prefs.getBoolean("gpu_next", false)
                     if (wantGpuNext != preferredGpuNext) {
@@ -80,7 +92,9 @@ internal class QualityPlaybackController(context: Context, private val selectRen
                     report()
                 }
                 MPVLib.MpvEvent.MPV_EVENT_FILE_LOADED,
-                MPVLib.MpvEvent.MPV_EVENT_VIDEO_RECONFIG -> decideWhenReady()
+                MPVLib.MpvEvent.MPV_EVENT_VIDEO_RECONFIG -> {
+                    if (decided) geometryChanged() else decideWhenReady()
+                }
                 MPVLib.MpvEvent.MPV_EVENT_END_FILE -> {
                     generation++; attemptNumber++; metadataJob?.cancel(); confirmation?.cancel(); attempted = null
                     pendingFailure = null; handler.removeCallbacks(failureFlush); phase(RendererAttemptPhase.IDLE)
@@ -139,6 +153,11 @@ internal class QualityPlaybackController(context: Context, private val selectRen
             if (failedOption != null) { chain.fail("option_rejected_" + failedOption); shaderStatus = "option_failed"; report(); continue }
             effective = if (mode.neural) QualityMode.ULTRA else mode
             if (!mode.neural) { shaderStatus = "not_requested"; phase(RendererAttemptPhase.BASELINE); report(); return }
+            val required = upscaleRequired()
+            if (required != true) {
+                deferModel(required)
+                return
+            }
             shaderStatus = "model_loading"; phase(RendererAttemptPhase.MODEL_INSTALL); report()
             val model = NeuralModel.forMode(mode)
             val file = try { NeuralAssets.install(app, model) }
@@ -146,7 +165,13 @@ internal class QualityPlaybackController(context: Context, private val selectRen
             catch (_: Exception) { chain.fail("model_integrity_or_install_failed"); shaderStatus = "load_failed"; report(); continue }
             scope.coroutineContext.ensureActive()
             if (closed || token != generation || attempt != attemptNumber) return
+            val stillRequired = upscaleRequired()
+            if (stillRequired != true) {
+                deferModel(stillRequired)
+                return
+            }
             phase(RendererAttemptPhase.SHADER_SUBMITTED)
+            recordSource(logContext, "submit geometry=" + geometry)
             if (MPVLib.setOptionString("glsl-shaders", file.absolutePath) < 0) {
                 chain.fail("shader_option_rejected"); shaderStatus = "load_failed"; report(); continue
             }
@@ -156,12 +181,28 @@ internal class QualityPlaybackController(context: Context, private val selectRen
         }
     }
     private fun upscaleRequired(): Boolean? {
+        geometry = "unavailable"
         val video = source ?: return null
         val width = MPVLib.getPropertyInt("osd-dimensions/w") ?: return null
         val height = MPVLib.getPropertyInt("osd-dimensions/h") ?: return null
         fun margin(name: String) = MPVLib.getPropertyInt("osd-dimensions/" + name) ?: 0
-        return NeuralGeometry.upscaleRequired(video.width, video.height,
-            width - margin("ml") - margin("mr"), height - margin("mt") - margin("mb"))
+        val outputWidth = width - margin("ml") - margin("mr")
+        val outputHeight = height - margin("mt") - margin("mb")
+        val required = NeuralGeometry.upscaleRequired(video.width, video.height, outputWidth, outputHeight)
+        geometry = "${video.width}x${video.height}->${outputWidth}x${outputHeight}, upscale-required=${required ?: "unknown"}"
+        return required
+    }
+    private fun deferModel(required: Boolean?) {
+        confirmation?.cancel()
+        attemptNumber++
+        phase(RendererAttemptPhase.BASELINE)
+        RendererInspection.reset()
+        renderer = null
+        MPVLib.setOptionString("glsl-shaders", "")
+        effective = QualityMode.ULTRA
+        shaderStatus = if (required == false) "bypassed_no_upscale" else "awaiting_output_geometry"
+        recordSource(logContext, "geometry_decision=" + shaderStatus + ", geometry=" + geometry)
+        report()
     }
     private fun startConfirmation(token: Long, attempt: Long, mode: QualityMode) {
         confirmation?.cancel()
@@ -169,15 +210,26 @@ internal class QualityPlaybackController(context: Context, private val selectRen
             repeat(16) {
                 delay(350)
                 if (closed || token != generation || attempt != attemptNumber) return@launch
-                if (upscaleRequired() == false) {
-                    effective = QualityMode.ULTRA; shaderStatus = "bypassed_no_upscale"; report(); return@launch
-                }
+                if (pendingFailure != null) return@repeat
+                val required = upscaleRequired()
+                if (required == false) { deferModel(false); return@launch }
                 RendererInspection.request()
-                renderer = RenderPassSummary.parse(RendererInspection.latest())
-                val matched = if (mode == QualityMode.AI_MAX) renderer?.neural16 == true else renderer?.neural8 == true
-                if (matched) { effective = mode; shaderStatus = "loaded_and_rendered"; phase(RendererAttemptPhase.CONFIRMED); report(); return@launch }
+                val sample = RendererInspection.latest()
+                renderer = RenderPassSummary.parse(sample)
+                val matched = renderer?.let {
+                    if (mode == QualityMode.AI_MAX) it.neural16 && !it.neural8 else it.neural8 && !it.neural16
+                } == true
+                if (required == true && matched) {
+                    effective = mode
+                    shaderStatus = "loaded_and_rendered"
+                    phase(RendererAttemptPhase.CONFIRMED)
+                    recordSource(logContext, "confirmed_pass " + sample + ", geometry=" + geometry)
+                    report()
+                    return@launch
+                }
             }
-            downgrade(token, attempt, "shader_render_confirmation_failed")
+            val reason = pendingFailure?.second?.fixedCode() ?: "shader_render_confirmation_failed"
+            downgrade(token, attempt, reason)
         }
     }
     private fun geometryChanged() {
@@ -187,6 +239,9 @@ internal class QualityPlaybackController(context: Context, private val selectRen
     }
     private fun downgrade(token: Long, attempt: Long, reason: String) {
         if (closed || token != generation || attempt != attemptNumber) return
+        recordSource(logContext, "fallback=" + reason + ", geometry=" + geometry)
+        pendingFailure = null
+        handler.removeCallbacks(failureFlush)
         attemptNumber++
         confirmation?.cancel(); confirmation = null
         fallback?.fail(reason)
@@ -196,20 +251,28 @@ internal class QualityPlaybackController(context: Context, private val selectRen
     override fun logMessage(prefix: String, level: Int, text: String) {
         if (closed) return
         val context = logContext
-        if ((context.mode ?: QualityMode.BALANCED) < QualityMode.ULTRA || context.phase == RendererAttemptPhase.IDLE) return
-        if (level > 30 || !listOf("gpu","libplacebo","opengl").any { prefix.lowercase().contains(it) }) return
+        if (context.phase == RendererAttemptPhase.IDLE || !RendererFailure.accepts(prefix, level)) return
         val failure = RendererFailure.classify(prefix,level,text)
         val sourceLines = sourceTrace.accept(context,text,failure)
-        if (failure == null && sourceLines.isEmpty()) return
-        // Only fixed failure fields and allowlisted source tokens cross to the UI; never raw text/prefix/path.
+        sourceLines.forEach { recordSource(context,it) }
+        if (failure == null) return
+        recordRenderer(context,failure)
         handler.post {
             if (closed || context.source != generation || context.attempt != attemptNumber) return@post
-            sourceLines.forEach { recordSource(context,it) }
-            if (failure == null) return@post
-            recordRenderer(context,failure)
+            val activeShader = context.phase in setOf(RendererAttemptPhase.SHADER_SUBMITTED,
+                RendererAttemptPhase.RENDER_CONFIRM, RendererAttemptPhase.CONFIRMED)
+            val activeUltra = context.mode == QualityMode.ULTRA && context.phase == RendererAttemptPhase.BASELINE
+            if (!activeShader && !activeUltra) return@post
             val previous = pendingFailure
             if (previous == null || failure.detailScore > previous.second.detailScore) pendingFailure = context to failure
-            if (previous == null) handler.postDelayed(failureFlush,80) // retain detailed compiler lines after its generic banner
+            // Generic driver/pass messages can precede the actual compiler report. An unconfirmed
+            // attempt already has a bounded render deadline, so keep collecting until that deadline.
+            val waitingForRender = shaderStatus == "awaiting_render_confirmation"
+            if (!waitingForRender || failure.detailScore >= 30) {
+                if (previous == null || (waitingForRender && previous.second.detailScore < 30)) {
+                    handler.postDelayed(failureFlush, 750)
+                }
+            }
         }
     }
     private fun report() {
@@ -226,7 +289,7 @@ internal class QualityPlaybackController(context: Context, private val selectRen
             ", model=" + (if (neural) "FSRCNNX x2 " + NeuralModel.forMode(attempted!!).channels + " channels" else "none") +
             ", shader=" + shaderStatus + ", bypass=" + (shaderStatus == "bypassed_no_upscale") + ", fallback=" + (fallback?.reasons?.isNotEmpty() == true) +
             ", reasons=" + fallback?.reasons.orEmpty().joinToString("; ") +
-            ", renderer-pass-avg-ns=" + (renderer?.averageNs ?: "n/a")
+            ", output-geometry=" + geometry + ", renderer-pass-avg-ns=" + (renderer?.averageNs ?: "n/a")
         )
     }
     fun close() {

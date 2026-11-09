@@ -21,13 +21,18 @@ object OwlDiagnostics {
         val states: MutableMap<String, Long> = mutableMapOf())
     private val frames = linkedMapOf<String, Frames>()
     private val samples = java.util.ArrayDeque<String>()
-    private val rendererErrors = java.util.ArrayDeque<String>()
+    private val rendererErrors = linkedMapOf<String, Long>()
+    private fun appendRenderer(context: RendererAttemptContext, message: String) {
+        val key = context.summary() + ", " + message
+        if (key in rendererErrors) return
+        if (rendererErrors.size >= 160) rendererErrors.remove(rendererErrors.keys.first())
+        rendererErrors[key] = SystemClock.elapsedRealtime()
+    }
     internal fun rendererRecorder(): (RendererAttemptContext, RendererFailure) -> Unit {
         val epoch = runtimeEpoch
         return { context, failure -> synchronized(this) {
             if (epoch == runtimeEpoch) {
-                if (rendererErrors.size >= 160) rendererErrors.removeFirst()
-                rendererErrors.addLast(SystemClock.elapsedRealtime().toString() + " ms: " + context.summary() + ", " + failure.summary())
+                appendRenderer(context, failure.summary())
             }
         } }
     }
@@ -35,8 +40,7 @@ object OwlDiagnostics {
         val epoch = runtimeEpoch
         return { context, safeLine -> synchronized(this) {
             if (epoch == runtimeEpoch) {
-                if (rendererErrors.size >= 160) rendererErrors.removeFirst()
-                rendererErrors.addLast(SystemClock.elapsedRealtime().toString() + " ms: " + context.summary() + ", " + safeLine)
+                appendRenderer(context, safeLine)
             }
         } }
     }
@@ -144,7 +148,7 @@ object OwlDiagnostics {
         append("\nStorage discovery transitions (latest 200):\n")
         storageEvents.forEach { append(it).append('\n') }
         append("\nSanitized renderer failures (latest 160; no raw messages):\n")
-        rendererErrors.forEach { append(it).append('\n') }
+        rendererErrors.forEach { (message, at) -> append(at).append(" ms: ").append(message).append('\n') }
         append("\nQuality pipeline:\n").append(quality).append('\n')
         append("\nLatest playback summary:\n").append(samples.peekLast() ?: "No playback samples yet").append('\n')
         append("\nRead-only playback samples (latest 300):\n")
