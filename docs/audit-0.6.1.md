@@ -57,7 +57,7 @@ PR #8 CI note: its last `build-release` failure is the tag publish step (`docs/r
 | Sharp | 구현됐으나 미검증 | `profile=fast` + spline36/mitchell (via preferences, gpu renderer). |
 | Ultra | 구현됐으나 미검증 | gpu-next, ewa_lanczossharp/mitchell, spline36 cscale, deband, fruit dither, linear/sigmoid/correct downscaling; fast profile skipped. Option names checked against pinned mpv in 0.6.0. |
 | Neural (FSRCNNX 8) | 구현됐으나 미검증 on device (Fold8 shows only a correct no-upscale bypass so far) | Same input/output glue as AI Max; Mesa GLES compile+render: PASS. |
-| AI Max (FSRCNNX 16) | **검증 완료 (Fold8 rendering)** in diagnostic.7: `confirmed_pass n16=1, passes=32`, 640x480→2448x1836, 0 drops at 30 fps. Image quality vs Ultra not yet compared. | diagnostic.5 compile error fixed (see diagnosis-0.6.1.md). | |
+| AI Max (FSRCNNX 16) | **검증 완료 (Fold8 rendering)** in diagnostic.7: `confirmed_pass n16=1, passes=32`, 640x480→2448x1836, 0 drops at 30 fps. Image quality vs Ultra not yet compared. | diagnostic.5 compile error fixed (see diagnosis-0.6.1.md). |
 | GPU vs NPU labelling | 검증 완료 (code) | Backend reported as GPU; "GPU requested/unconfirmed" until a render pass is confirmed. |
 | Bypass vs error separation | 구현됐으나 미검증 | PR #8 checks output geometry before submission; bypass has no submission. |
 
