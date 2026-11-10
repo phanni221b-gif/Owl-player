@@ -98,3 +98,12 @@ geometry failed in diagnostic.5, renders in diagnostic.7). AI Max actually execu
 Still open: Neural (8-channel) has not yet been observed in `confirmed_pass` on the device (only bypass);
 image-quality comparison vs Ultra; 60 fps or larger sources, where ~23 ms of summed pass time per frame would
 exceed a 16.7 ms frame budget; heat and battery.
+
+## diagnostic.9: performance step-down
+
+While a model is confirmed, `PerformanceGuard` samples `frame-drop-count + vo-delayed-frame-count` once per second.
+It ignores 3 grace seconds after confirmation, a seek or restart, plus paused time and counter resets. It downgrades
+when 3 of the last 5 seconds each lose >= 2 frames, using the existing fallback chain with reason
+`performance_frame_drops` and a `performance_fallback` report line (mode, lost frames, fps, geometry).
+Thresholds are first estimates from the 30 fps Fold8 samples (0 drops with AI Max at 640x480) and still need
+device tuning.

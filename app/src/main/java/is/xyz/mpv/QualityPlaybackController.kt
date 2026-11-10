@@ -26,6 +26,7 @@ internal class QualityPlaybackController(context: Context, private val selectRen
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private var metadataJob: Job? = null
     private var confirmation: Job? = null
+    private val performanceGuard = PerformanceGuard()
     @Volatile private var generation = 0L
     @Volatile private var attemptNumber = 0L
     @Volatile private var closed = false
@@ -95,6 +96,8 @@ internal class QualityPlaybackController(context: Context, private val selectRen
                 MPVLib.MpvEvent.MPV_EVENT_VIDEO_RECONFIG -> {
                     if (decided) geometryChanged() else decideWhenReady()
                 }
+                // Seeks and restarts briefly drop frames by design; never count them against the model.
+                MPVLib.MpvEvent.MPV_EVENT_PLAYBACK_RESTART -> performanceGuard.reset()
                 MPVLib.MpvEvent.MPV_EVENT_END_FILE -> {
                     generation++; attemptNumber++; metadataJob?.cancel(); confirmation?.cancel(); attempted = null
                     pendingFailure = null; handler.removeCallbacks(failureFlush); phase(RendererAttemptPhase.IDLE)
@@ -226,11 +229,29 @@ internal class QualityPlaybackController(context: Context, private val selectRen
                     phase(RendererAttemptPhase.CONFIRMED)
                     recordSource(logContext, "confirmed_pass " + sample + ", geometry=" + geometry)
                     report()
+                    watchPerformance(token, attempt, mode)
                     return@launch
                 }
             }
             val reason = pendingFailure?.second?.fixedCode() ?: "shader_render_confirmation_failed"
             downgrade(token, attempt, reason)
+        }
+    }
+    /** Runs inside the confirmation job, so every path that cancels or supersedes the attempt stops it. */
+    private suspend fun watchPerformance(token: Long, attempt: Long, mode: QualityMode) {
+        performanceGuard.reset()
+        while (!closed && token == generation && attempt == attemptNumber && shaderStatus == "loaded_and_rendered") {
+            delay(1000)
+            if (closed || token != generation || attempt != attemptNumber) return
+            val lost = listOf("frame-drop-count", "vo-delayed-frame-count")
+                .map { MPVLib.getPropertyDouble(it)?.takeIf(Double::isFinite)?.toLong() }
+            val total = if (lost.any { it == null }) null else lost.sumOf { it!! }
+            if (performanceGuard.sample(total, MPVLib.getPropertyBoolean("pause") == true)) {
+                recordSource(logContext, "performance_fallback mode=" + mode.name + ", lost_frames_5s=" +
+                    performanceGuard.lostInWindow + ", fps=" + (source?.fps ?: "n/a") + ", geometry=" + geometry)
+                downgrade(token, attempt, "performance_frame_drops")
+                return
+            }
         }
     }
     private fun geometryChanged() {
