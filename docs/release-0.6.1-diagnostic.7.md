@@ -1,4 +1,4 @@
-# Owl 0.6.1-diagnostic.6
+# Owl 0.6.1-diagnostic.7
 
 Diagnostic build: a targeted fix for the Galaxy Fold8 Neural/AI Max shader compile error. It still needs to be confirmed on the device.
 
@@ -7,4 +7,4 @@ Diagnostic build: a targeted fix for the Galaxy Fold8 Neural/AI Max shader compi
 - Shader validation now reproduces the device error with the real libplacebo macros and checks both texture types.
 
 Verify on Fold8: Settings → Diagnostics → clear, play a 480p/720p SDR clip with AI Max, then check that `confirmed_pass` and `effective=AI Max` appear. Until then, Neural/AI Max on Fold8 is unconfirmed.
-Includes everything in 0.6.1-diagnostic.5.
+Includes everything in 0.6.1-diagnostic.5. (0.6.1-diagnostic.6 was never published: its build stopped at an over-strict asset check.)
