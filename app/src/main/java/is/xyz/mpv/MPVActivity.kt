@@ -225,6 +225,11 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             playbackSeekbar.setOnSeekBarChangeListener(seekBarChangeListener)
         }
 
+        // Keep play/pause (with previous/next beside it) on the screen's center line even though the
+        // side clusters differ in width (audio+subtitle vs decoder+screen+speed, or audio-only UI).
+        controlsButtonGroupBase = binding.controlsButtonGroup.paddingStart
+        binding.controlsButtonGroup.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> balanceControlRow() }
+
         player.setOnTouchListener { _, e ->
             if (lockedUI) false else gestures.onTouchEvent(e)
         }
@@ -254,6 +259,35 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
     }
 
     private var playbackHasStarted = false
+    private var controlsButtonGroupBase = 0
+
+    private fun balanceControlRow() {
+        val group = binding.controlsButtonGroup
+        val play = binding.playBtn
+        if (group.width == 0 || play.visibility != View.VISIBLE) return
+        val left = play.left - group.paddingStart
+        val right = group.width - group.paddingEnd - play.right
+        val delta = left - right
+        val start = controlsButtonGroupBase + maxOf(0, -delta)
+        val end = controlsButtonGroupBase + maxOf(0, delta)
+        if (start != group.paddingStart || end != group.paddingEnd)
+            group.post { group.setPaddingRelative(start, group.paddingTop, end, group.paddingBottom) }
+    }
+
+    // Per-source playback bookkeeping, written from the mpv event thread.
+    @Volatile private var currentSource: String? = null
+    @Volatile private var sourceReachedPlayback = false
+    @Volatile private var userChangedSource = false
+
+    /** Persists the resume position of the source being left (playlist step, background, exit). */
+    private fun saveSourceProgress() {
+        val source = currentSource ?: return
+        if (!sourceReachedPlayback || psc.position < 0) return
+        PlaybackHistory.saveSource(applicationContext, source, psc.position, psc.duration)
+    }
+
+    /** Called for user-initiated source changes so an unstarted source is not reported as broken. */
+    private fun markUserSourceChange() { userChangedSource = true }
     private var onloadCommands = mutableListOf<Array<String>>()
 
     // Activity lifetime
@@ -364,7 +398,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         fadeHandler.removeCallbacksAndMessages(null)
         stopServiceHandler.removeCallbacksAndMessages(null)
         BackgroundPlaybackService.stopAndClear(this, true)
-        if (playerInitialized) { savePosition(); MPVLib.command(arrayOf("stop")) }
+        if (playerInitialized) { saveSourceProgress(); savePosition(); MPVLib.command(arrayOf("stop")) }
         didResumeBackgroundPlayback = false
         mediaSession?.let { it.isActive = false; it.setCallback(null); it.release() }
         mediaSession = null
@@ -422,6 +456,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             return
         }
 
+        markUserSourceChange()
         if (!activityIsForeground && didResumeBackgroundPlayback) {
             if (this.newIntentReplace) {
                 MPVLib.command(arrayOf("loadfile", filepath, "replace"))
@@ -501,6 +536,8 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
         activityIsForeground = false
         eventUiHandler.removeCallbacksAndMessages(null)
+        // The process may be reclaimed while in the background; keep resume state current.
+        saveSourceProgress()
         if (isFinishing) {
             savePosition()
             // tell mpv to shut down so that any other property changes or such are ignored,
@@ -1087,8 +1124,8 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }
     }
 
-    private fun playlistPrev() = MPVLib.command(arrayOf("playlist-prev"))
-    private fun playlistNext() = MPVLib.command(arrayOf("playlist-next"))
+    private fun playlistPrev() { markUserSourceChange(); MPVLib.command(arrayOf("playlist-prev")) }
+    private fun playlistNext() { markUserSourceChange(); MPVLib.command(arrayOf("playlist-next")) }
 
     private fun showToast(msg: String, cancel: Boolean = false) {
         if (cancel)
@@ -1346,6 +1383,7 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             }
 
             override fun onItemPicked(item: MPVView.PlaylistItem) {
+                markUserSourceChange()
                 MPVLib.setPropertyInt("playlist-pos", item.index)
                 dialog.dismiss()
             }
@@ -2161,9 +2199,23 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
 
     override fun event(eventId: Int) {
         if (eventId == MpvEvent.MPV_EVENT_PLAYBACK_RESTART && !OwlSession.ending) {
+            sourceReachedPlayback = true
             MPVLib.getPropertyString("path")?.let { SeenVideos.markPlayed(applicationContext, it) }
         }
         if (eventId == MpvEvent.MPV_EVENT_END_FILE) {
+            saveSourceProgress()
+            val failedSource = currentSource.takeIf {
+                !sourceReachedPlayback && !userChangedSource && !taskExitRequested && !isFinishing && !OwlSession.ending
+            }
+            currentSource = null
+            if (failedSource != null) {
+                val name = failedSource.substringAfterLast('/').take(80)
+                Handler(Looper.getMainLooper()).post {
+                    // Not eventUiHandler (cleared on pause/exit) and application context: the message
+                    // must survive the player closing after a single failed file.
+                    Toast.makeText(applicationContext, getString(R.string.owl_error_open_file, name), Toast.LENGTH_LONG).show()
+                }
+            }
             psc.eof()
             updateMediaSession()
         }
@@ -2172,6 +2224,9 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
             finishWithResult(if (playbackHasStarted) RESULT_OK else RESULT_CANCELED)
 
         if (eventId == MpvEvent.MPV_EVENT_START_FILE) {
+            currentSource = MPVLib.getPropertyString("path")
+            sourceReachedPlayback = false
+            userChangedSource = false
             val cmds = onloadCommands.toTypedArray()
             onloadCommands.clear()
             for (c in cmds)

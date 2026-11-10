@@ -101,6 +101,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
         findViewById<View>(R.id.videoSelectAll).setOnClickListener { adapter.selectAll() }
         findViewById<View>(R.id.videoMoveSelected).setOnClickListener { startMoveSelectedVideos() }
         findViewById<View>(R.id.videoDeleteSelected).setOnClickListener { confirmDeleteSelectedVideos() }
+        findViewById<View>(R.id.videoRenameSelected).setOnClickListener { renameSelectedVideo() }
 
         recycler = findViewById(R.id.videoRecycler)
         emptyText = findViewById(R.id.videoEmptyText)
@@ -139,6 +140,7 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
         findViewById<View>(R.id.folderToolbar).visibility = if (count == 0) View.VISIBLE else View.GONE
         findViewById<View>(R.id.videoSelectionBar).visibility = if (count == 0) View.GONE else View.VISIBLE
         findViewById<TextView>(R.id.videoSelectionCount).text = "${count}개 선택"
+        findViewById<View>(R.id.videoRenameSelected).visibility = if (count == 1) View.VISIBLE else View.GONE
         if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = count == 0
     }
 
@@ -274,14 +276,14 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     }
 
     private fun performVideoDelete(selected: List<MediaVideo>) {
-        Toast.makeText(this, "완전 삭제 중…", Toast.LENGTH_SHORT).show()
         if (OwlSession.ending || isFinishing || isDestroyed || fileJob?.isActive == true) return
+        Toast.makeText(this, "완전 삭제 중…", Toast.LENGTH_SHORT).show()
         fileJob = lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 val job = currentCoroutineContext()[Job]!!
                 OwlFileOperations.deleteVideos(this@FolderActivity, selected) { job.ensureActive() }
             }
-            selected.forEach { PlaybackHistory.clear(this@FolderActivity, it) }
+            withContext(Dispatchers.IO) { goneVideos(selected).forEach { PlaybackHistory.clear(this@FolderActivity, it) } }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 adapter.clearSelection()
@@ -306,14 +308,14 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     }
 
     private fun performVideoMove(selected: List<MediaVideo>, destination: File) {
-        Toast.makeText(this, "이동 중…", Toast.LENGTH_SHORT).show()
         if (OwlSession.ending || isFinishing || isDestroyed || fileJob?.isActive == true) return
+        Toast.makeText(this, "이동 중…", Toast.LENGTH_SHORT).show()
         fileJob = lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 val job = currentCoroutineContext()[Job]!!
                 OwlFileOperations.moveVideos(this@FolderActivity, selected, destination) { job.ensureActive() }
             }
-            selected.forEach { PlaybackHistory.clear(this@FolderActivity, it) }
+            withContext(Dispatchers.IO) { goneVideos(selected).forEach { PlaybackHistory.clear(this@FolderActivity, it) } }
             runOnUiThread {
                 if (isDestroyed || isFinishing) return@runOnUiThread
                 adapter.clearSelection()
@@ -324,12 +326,28 @@ class FolderActivity : AppCompatActivity(R.layout.activity_folder) {
     }
 
     private fun showOperationResult(action: String, result: OwlFileOperationResult) {
-        val message = if (result.failureCount == 0) {
-            "${result.successCount}개 항목 ${action} 완료"
-        } else {
-            "${result.successCount}개 ${action} 완료 · ${result.failureCount}개 실패"
+        Toast.makeText(this, result.message(action), Toast.LENGTH_LONG).show()
+    }
+
+    /** Failed deletions/moves keep their resume position; only files that are really gone lose it. */
+    private fun goneVideos(selected: List<MediaVideo>) =
+        selected.filter { video -> video.path?.takeIf { it.isNotBlank() }?.let { !File(it).exists() } ?: false }
+
+    private fun renameSelectedVideo() {
+        val video = adapter.selectedItems().singleOrNull() ?: return
+        OwlRenameDialog.show(this, "파일 이름 변경", video.path?.let { File(it).name } ?: video.title) { name ->
+            if (OwlSession.ending || isFinishing || isDestroyed || fileJob?.isActive == true) return@show
+            fileJob = lifecycleScope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    OwlFileOperations.renameVideo(this@FolderActivity, video, name)
+                        .onSuccess { target -> OwlRenameDialog.migrateVideoState(this@FolderActivity, video, target) }
+                }
+                if (isDestroyed || isFinishing) return@launch
+                adapter.clearSelection()
+                Toast.makeText(this@FolderActivity, result.fold({ "이름을 변경했습니다." }, { it.message ?: "이름을 바꾸지 못했습니다." }), Toast.LENGTH_LONG).show()
+                if (result.isSuccess) rescanFolder()
+            }
         }
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
     companion object {

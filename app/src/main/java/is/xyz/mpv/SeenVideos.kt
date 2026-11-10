@@ -28,6 +28,12 @@ internal object SeenVideos {
         val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (!prefs.getBoolean(key, false)) prefs.edit().putBoolean(key, true).apply()
     }
+    /** A renamed or moved file keeps its played state. */
+    fun moveSource(context: Context, oldSource: String, newSource: String) {
+        val old = sourceKey(oldSource) ?: return
+        val prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (prefs.getBoolean(old, false)) markPlayed(context, newSource)
+    }
     /** Called off the UI thread, once per folder-list refresh; never during item binding. */
     fun snapshot(context: Context): Set<String> {
         val app = context.applicationContext

@@ -109,6 +109,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         findViewById<View>(R.id.mainSelectAll).setOnClickListener { adapter.selectAllVisible() }
         findViewById<View>(R.id.mainMoveSelected).setOnClickListener { startMoveSelectedFolders() }
         findViewById<View>(R.id.mainDeleteSelected).setOnClickListener { confirmDeleteSelectedFolders() }
+        findViewById<View>(R.id.mainRenameSelected).setOnClickListener { renameSelectedFolder() }
 
         onBackPressedDispatcher.addCallback(this) {
             if (adapter.isSelectionMode()) adapter.clearSelection() else finish()
@@ -194,6 +195,7 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         browseControls.visibility = if (count == 0) View.VISIBLE else View.GONE
         findViewById<View>(R.id.mainSelectionBar).visibility = if (count == 0) View.GONE else View.VISIBLE
         findViewById<TextView>(R.id.mainSelectionCount).text = "${count}개 선택"
+        findViewById<View>(R.id.mainRenameSelected).visibility = if (count == 1) View.VISIBLE else View.GONE
         if (::swipeRefresh.isInitialized) swipeRefresh.isEnabled = count == 0
     }
 
@@ -382,15 +384,16 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
         if (selected.isEmpty()) return
         AlertDialog.Builder(this)
             .setTitle("정말 삭제하겠습니까?")
-            .setMessage("선택한 ${selected.size}개 폴더와 그 안의 모든 파일을 휴지통으로 이동하지 않고 완전히 삭제합니다.\n\n삭제 후에는 복구할 수 없습니다.")
+            .setMessage("선택한 ${selected.size}개 폴더의 영상 ${selected.sumOf { it.videos.size }}개를 휴지통 없이 완전히 삭제합니다.\n\n" +
+                "영상이 아닌 파일(사진·문서 등)과 하위 폴더는 삭제하지 않으며, 영상을 지운 뒤 비어 있는 폴더만 함께 정리합니다.\n\n삭제 후에는 복구할 수 없습니다.")
             .setNegativeButton("취소", null)
             .setPositiveButton("완전 삭제") { _, _ -> performFolderDelete(selected) }
             .show()
     }
 
     private fun performFolderDelete(selected: List<MediaFolder>) {
-        Toast.makeText(this, "완전 삭제 중…", Toast.LENGTH_SHORT).show()
         if (OwlSession.ending || isFinishing || isDestroyed || fileJob?.isActive == true) return
+        Toast.makeText(this, "완전 삭제 중…", Toast.LENGTH_SHORT).show()
         fileJob = lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 val job = currentCoroutineContext()[Job]!!
@@ -421,8 +424,8 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     }
 
     private fun performFolderMove(selected: List<MediaFolder>, destination: File) {
-        Toast.makeText(this, "이동 중…", Toast.LENGTH_SHORT).show()
         if (OwlSession.ending || isFinishing || isDestroyed || fileJob?.isActive == true) return
+        Toast.makeText(this, "이동 중…", Toast.LENGTH_SHORT).show()
         fileJob = lifecycleScope.launch {
             val result = withContext(Dispatchers.IO) {
                 val job = currentCoroutineContext()[Job]!!
@@ -438,12 +441,24 @@ class MainActivity : AppCompatActivity(R.layout.activity_main) {
     }
 
     private fun showOperationResult(action: String, result: OwlFileOperationResult) {
-        val message = if (result.failureCount == 0) {
-            "${result.successCount}개 항목 ${action} 완료"
-        } else {
-            "${result.successCount}개 ${action} 완료 · ${result.failureCount}개 실패"
+        Toast.makeText(this, result.message(action), Toast.LENGTH_LONG).show()
+    }
+
+    private fun renameSelectedFolder() {
+        val folder = adapter.selectedItems().singleOrNull() ?: return
+        OwlRenameDialog.show(this, "폴더 이름 변경", folder.name) { name ->
+            if (OwlSession.ending || isFinishing || isDestroyed || fileJob?.isActive == true) return@show
+            fileJob = lifecycleScope.launch {
+                val result = withContext(Dispatchers.IO) {
+                    val renamed = OwlFileOperations.renameFolder(this@MainActivity, folder, name)
+                    renamed.onSuccess { target -> OwlRenameDialog.migrateFolderState(this@MainActivity, folder, target) }
+                }
+                if (isDestroyed || isFinishing) return@launch
+                adapter.clearSelection()
+                Toast.makeText(this@MainActivity, result.fold({ "이름을 변경했습니다." }, { it.message ?: "이름을 바꾸지 못했습니다." }), Toast.LENGTH_LONG).show()
+                if (result.isSuccess) loadFolders(force = true)
+            }
         }
-        Toast.makeText(this, message, Toast.LENGTH_LONG).show()
     }
 
     companion object {
