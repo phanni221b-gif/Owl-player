@@ -84,3 +84,17 @@ path (H.264, MPEG-2/4, VP8). HEVC/AV1/VP9 with unknown transfer still fall back 
 ### Fold8 check for diagnostic.7
 Same session procedure as diagnostic.4. Success requires `confirmed_pass` with the matching model and
 `effective=Neural`/`AI Max` in Quality pipeline, plus a visual comparison against Ultra on the same clip.
+
+## diagnostic.7 Fold8 result
+
+Same Fold8, base Ultra, AI Max for SD/HD, direct MediaCodec, 640x480 H.264 at 29.97 fps, fullscreen unfolded:
+`submit geometry=640x480->2448x1836` followed 0.7 s later by `phase=CONFIRMED, confirmed_pass id=4,n8=0,n16=1,passes=32`.
+No renderer failure was recorded. Twelve consecutive one-second samples kept `n16=1, passes=32` with
+frame-drop 0, decoder-drop 0 and vo-delayed 0; the summed pass average was 17.4-23.3 ms per frame.
+A following 1920x1080 clip with Neural requested was correctly `bypassed_no_upscale` (2448x1377 is < 1.3x).
+
+Conclusion: the textureLod/samplerExternalOES diagnosis is confirmed by device behaviour (same clip and
+geometry failed in diagnostic.5, renders in diagnostic.7). AI Max actually executes on the Fold8 GPU.
+Still open: Neural (8-channel) has not yet been observed in `confirmed_pass` on the device (only bypass);
+image-quality comparison vs Ultra; 60 fps or larger sources, where ~23 ms of summed pass time per frame would
+exceed a 16.7 ms frame budget; heat and battery.

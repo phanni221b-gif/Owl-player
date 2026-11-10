@@ -2204,12 +2204,10 @@ class MPVActivity : AppCompatActivity(), MPVLib.EventObserver, TouchGesturesObse
         }
         if (eventId == MpvEvent.MPV_EVENT_END_FILE) {
             saveSourceProgress()
-            val failedSource = currentSource.takeIf {
-                !sourceReachedPlayback && !userChangedSource && !taskExitRequested && !isFinishing && !OwlSession.ending
-            }
+            val name = PlaybackOpenFailure.reportable(currentSource, sourceReachedPlayback, userChangedSource,
+                taskExitRequested || isFinishing || OwlSession.ending)
             currentSource = null
-            if (failedSource != null) {
-                val name = failedSource.substringAfterLast('/').take(80)
+            if (name != null) {
                 Handler(Looper.getMainLooper()).post {
                     // Not eventUiHandler (cleared on pause/exit) and application context: the message
                     // must survive the player closing after a single failed file.
