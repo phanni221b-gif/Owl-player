@@ -42,6 +42,16 @@ class RendererSourceTraceTest {
         assertTrue(lines.any { it.contains("line=81") })
         assertFalse(lines.any { it.contains("private_name") })
     }
+    @Test fun texturedHookFormIsStillLabelled() {
+        val trace = RendererSourceTrace()
+        trace.accept(context, "", error("ERROR: 0:81: 'textureLod' : no matching overloaded function found"))
+        val lines = trace.accept(context, """
+            fragment shader source:
+            [ 81] vec4 hook() { return vec4(dot((HOOKED_mul * texture(HOOKED_raw, HOOKED_pos)).rgb, vec3(0.2126, 0.7152, 0.0722)), 0.0, 0.0, 1.0); }
+        """.trimIndent(), null)
+        assertTrue(lines.any { it.contains("role=main_rgb_to_luma") })
+        assertTrue(lines.any { it.contains("HOOKED_raw") && it.contains("texture") })
+    }
     @Test fun attemptsDoNotShareCompilerTargetsOrShaderStage() {
         val trace = RendererSourceTrace()
         trace.accept(context,"",error("ERROR: 0:81: syntax error"))

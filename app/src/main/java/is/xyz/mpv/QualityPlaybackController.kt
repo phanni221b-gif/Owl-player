@@ -119,7 +119,8 @@ internal class QualityPlaybackController(context: Context, private val selectRen
                         val fps = MPVLib.getPropertyDouble("container-fps")?.takeIf { it > 0 && it.isFinite() }
                         val codec = MPVLib.getPropertyString("video-format").orEmpty()
                             .replace(Regex("[^A-Za-z0-9 ._+()-]"), "?").take(64)
-                        val hdr = when (gamma) { null, "", "unknown" -> null; "pq", "hlg" -> true; else -> false }
+                        val hdr = SourceTransfer.hdr(gamma, MPVLib.getPropertyString("video-dec-params/gamma"),
+                            MPVLib.getPropertyString("video-params/primaries"), codec)
                         source = SourceVideo(width, height, fps, hdr, codec)
                         fallback = QualityFallback(configuration.candidates(source!!))
                         decided = true

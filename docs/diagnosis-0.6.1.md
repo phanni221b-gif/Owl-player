@@ -50,3 +50,37 @@ The controller now checks the OSD-derived video rectangle before submitting a mo
 3. If AI Max fails, let the automatic Neural fallback finish. If it renders successfully, switch the same bucket to Neural and replay the clip within the session. Copy the full Owl diagnostics once.
 
 Compare the attempt IDs on `submit geometry`, `generated_glsl`, `generated_hook`, `generated_source`, and `fallback`. A bypass has no model submission. A compiler status or line identifies compile failure. A link status identifies link failure. A later pass-creation or dispatch message can follow either failure. A `confirmed_pass` with the matching model and pass marker is the device evidence required for success. If the driver supplies only a generic failure, the generated preamble and hook role narrow the next probe, and missing compiler/GL values remain unavailable.
+
+## diagnostic.5 Fold8 result and diagnostic.6 change
+
+The Fold8 report (AI Max, 640x480 -> 2448x1836, upscale required) contains, for the same source and attempt:
+`shader_compile_error:syntax_or_type_error, line=81, terms=NO_MATCHING_OVERLOAD`, then `program_build_failed`
+and `pass_setup_failed`. The dump identifies GLSL ES 3.20 with `precision highp sampler2D`, and line 81 of the
+failing fragment shader is the Owl RGB-to-luma input glue (role `main_rgb_to_luma`):
+`vec4 hook() { return vec4(dot(HOOKED_tex(HOOKED_pos).rgb, vec3(...)), ...); }`. The CNN passes never ran.
+The following Neural attempt only logged `driver_reported_error`: its input pass is byte-identical, so the
+renderer re-used the failed program without a new compiler log, which also explains diagnostic.3.
+
+Pinned libplacebo c4de47cd `bind_pass_tex` defines `NAME_tex(pos)` as `mul * vec4(textureLod(raw, pos, 0.0))`
+and `HOOKED_tex` as an alias. GL_OES_EGL_image_external_essl3 provides `texture()` but not `textureLod()` for
+`samplerExternalOES`, the type of direct MediaCodec frames. Reproduction with glslang 15 and the exact libplacebo
+macro layout: the old line fails with `'textureLod' : no matching overloaded function found` when HOOKED is
+`samplerExternalOES`, and compiles when it is `sampler2D`. That matches the device error class and line.
+
+diagnostic.6 changes only the two glue reads of HOOKED (input and RGB reconstruction) to
+`HOOKED_mul * texture(HOOKED_raw, HOOKED_pos)`, valid for both sampler types and identical for non-mipmapped
+textures. CNN functions, coefficients and topology are unchanged (validator still compares them to upstream).
+`tools/validate_glsl_es.mjs` now uses the libplacebo macro layout and compiles HOOKED passes as both sampler types;
+it fails on diagnostic.5 assets with the device error and passes on diagnostic.6. Mesa GLES render smoke passes.
+
+Certainty: the failing statement and error class are established from device evidence; that HOOKED is an external
+texture at the MAIN stage on Fold8 is inferred (it is the only overload on that line that cannot match) and is
+not proven until the device shows `confirmed_pass`. If a different error appears, the same report fields apply.
+
+Also changed: an untagged transfer (HDR=unknown) blocked both models for an 854x480 H.264 clip. It is now treated
+as SDR only when the decoder transfer is not PQ/HLG, primaries are not BT.2020 and the codec has no practical HDR
+path (H.264, MPEG-2/4, VP8). HEVC/AV1/VP9 with unknown transfer still fall back to Ultra.
+
+### Fold8 check for diagnostic.6
+Same session procedure as diagnostic.4. Success requires `confirmed_pass` with the matching model and
+`effective=Neural`/`AI Max` in Quality pipeline, plus a visual comparison against Ultra on the same clip.

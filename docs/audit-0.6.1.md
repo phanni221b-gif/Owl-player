@@ -76,6 +76,8 @@ Limits: the device runs pinned libplacebo c4de47cd, whose preamble length differ
 
 Certainty: root cause **unconfirmed**. No production shader change is justified. The diagnostic.4/5 report fields `generated_glsl` (version), `generated_source` (allowlisted tokens around the compiler line) and `generated_hook` (pass role) are designed to identify the exact construct.
 
+**Update (diagnostic.6):** the Fold8 diagnostic.5 report identified the failing statement: the RGB-to-luma input glue at generated line 81, `NO_MATCHING_OVERLOAD`, reproduced with glslang as `textureLod` on `samplerExternalOES`. A glue-only fix ships in diagnostic.6 (see `diagnosis-0.6.1.md`). Neural/AI Max on Fold8 stays 결함 확인 until a device `confirmed_pass` exists.
+
 ## Fold8 checklist (diagnostic.5)
 
 1. Shader: follow `diagnosis-0.6.1.md` "One Fold8 test session"; return the full Owl diagnostics. Required evidence for success: `confirmed_pass` with the matching model.

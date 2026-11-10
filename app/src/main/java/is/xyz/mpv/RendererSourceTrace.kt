@@ -21,7 +21,7 @@ internal class RendererSourceTrace {
             val header = headers[line.trim()]
             if (header != null) {
                 stage = header
-                preambleBudget = 6
+                preambleBudget = 12
                 continue
             }
             val match = sourceLine.matchEntire(line) ?: continue
@@ -30,7 +30,7 @@ internal class RendererSourceTrace {
             val body = match.groupValues[2].trim()
             val hook = when {
                 body.startsWith("#define") -> null
-                body.contains("dot(HOOKED_tex(HOOKED_pos).rgb") -> "main_rgb_to_luma"
+                body.contains("dot(HOOKED_tex(HOOKED_pos).rgb") || body.contains("dot((HOOKED_mul * texture(HOOKED_raw, HOOKED_pos)).rgb") -> "main_rgb_to_luma"
                 body.contains("OWL_SR_LUMA_tex(OWL_SR_LUMA_pos)") -> "main_rgb_reconstruction"
                 body.contains("OWL_LUMA_texOff(") -> "cnn_first_feature"
                 body.contains("SUBCONV1_tex(base)") -> "cnn_aggregation"
@@ -65,7 +65,7 @@ internal class RendererSourceTrace {
             "sampler2D samplerExternalOES sampler2DArray sampler3D sampler2DRect highp mediump lowp precision uniform in out inout const layout " +
             "return if else for while define version extension require enable disable main hook dot texture texture2D textureLod texelFetch clamp mix " +
             "fract floor ceil exp pow max min abs color luma neural res fcoord base index rgb rgba r g b a xy zw xyz xyzw " +
-            "HOOKED_tex HOOKED_pos HOOKED_size HOOKED_pt OWL_LUMA_tex OWL_LUMA_texOff OWL_LUMA_pos OWL_SR_LUMA_tex OWL_SR_LUMA_pos " +
+            "HOOKED_tex HOOKED_raw HOOKED_mul HOOKED_pos HOOKED_size HOOKED_pt OWL_LUMA_tex OWL_LUMA_texOff OWL_LUMA_pos OWL_SR_LUMA_tex OWL_SR_LUMA_pos " +
             "GL_OES_EGL_image_external GL_OES_EGL_image_external_essl3 GL_EXT_shader_io_blocks GL_EXT_texture_norm16 " +
             "common partition active asm class union enum typedef template this resource goto inline noinline public static extern external interface long short half fixed unsigned superp input output hvec2 hvec3 hvec4 fvec2 fvec3 fvec4 sampler3DRect filter sizeof cast namespace using row_major").split(' ').toSet()
         private val lex = Regex("[A-Za-z_][A-Za-z_0-9]*|[0-9]+(?:\\.[0-9]*)?|[^\\s]")

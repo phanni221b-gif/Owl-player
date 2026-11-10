@@ -27,6 +27,8 @@ for model in manifest['models']:
     assert new.count('//!HOOK MAIN') == len(expected) + 2
     assert '//!HOOK LUMA' not in new
     assert f'Owl FSRCNNX {model["channels"]} RGB reconstruction' in new
+    # libplacebo's HOOKED_tex expands to textureLod, undefined for samplerExternalOES (Fold8 compile error).
+    assert 'HOOKED_tex' not in new and new.count('texture(HOOKED_raw, HOOKED_pos)') == 2
     sizes.append(len(original))
 assert sizes[1] > sizes[0]
 assert (ASSETS / 'COPYING.LESSER').stat().st_size > 7000

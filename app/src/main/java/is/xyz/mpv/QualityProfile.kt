@@ -96,3 +96,27 @@ internal object NeuralGeometry {
             maxOf(outputWidth, outputHeight).toDouble() / maxOf(sourceWidth, sourceHeight) > 1.3
     }
 }
+
+/**
+ * HDR classification for the SDR-only models. Explicit PQ/HLG is HDR; any other tagged transfer is SDR.
+ * An untagged transfer (common for SD/HD H.264 under direct MediaCodec, where mpv reports "unknown")
+ * is treated as SDR only when nothing points at HDR: the decoder-side transfer is not PQ/HLG, the
+ * primaries are not BT.2020, and the codec has no practical HDR signalling path (H.264, MPEG-2/4, VP8).
+ * Everything else stays unknown and keeps the conservative Ultra fallback.
+ */
+internal object SourceTransfer {
+    private val hdrTransfers = setOf("pq", "hlg")
+    private val unknown = setOf("", "unknown", "auto")
+    private val sdrOnlyCodecs = setOf("h264", "mpeg2video", "mpeg4", "vp8", "mjpeg", "h263")
+
+    fun hdr(gamma: String?, decoderGamma: String?, primaries: String?, codec: String?): Boolean? {
+        val transfer = gamma?.lowercase()?.trim().orEmpty()
+        val decoded = decoderGamma?.lowercase()?.trim().orEmpty()
+        if (transfer in hdrTransfers || decoded in hdrTransfers) return true
+        if (transfer !in unknown) return false
+        if (decoded !in unknown) return false
+        if (primaries?.lowercase()?.trim() == "bt.2020") return null
+        val name = codec?.lowercase()?.trim()?.substringBefore(' ').orEmpty()
+        return if (name in sdrOnlyCodecs) false else null
+    }
+}
