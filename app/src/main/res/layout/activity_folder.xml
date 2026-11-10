@@ -97,6 +97,19 @@
             android:textSize="12sp" />
 
         <Button
+            android:id="@+id/videoRenameSelected"
+            style="?android:attr/borderlessButtonStyle"
+            android:layout_width="wrap_content"
+            android:layout_height="48dp"
+            android:minWidth="0dp"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:text="이름 변경"
+            android:textColor="@color/owl_orange_dark"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <Button
             android:id="@+id/videoMoveSelected"
             style="?android:attr/borderlessButtonStyle"
             android:layout_width="wrap_content"

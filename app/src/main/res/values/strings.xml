@@ -212,4 +212,6 @@
     <!-- File picker -->
     <string name="nnf_name">Name</string>
     <string name="nnf_permission_external_write_denied">Permission to access file system denied</string>
+    <string name="folder_unseen_count">아직 보지 않은 영상 %1$d개</string>
+    <string name="owl_error_open_file">재생할 수 없습니다: %1$s\n파일에 접근할 수 없거나 지원하지 않는 형식입니다.</string>
 </resources>

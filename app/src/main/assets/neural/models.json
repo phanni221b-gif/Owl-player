@@ -7,14 +7,14 @@
       "upstreamFile": "FSRCNNX_x2_8-0-4-1.glsl",
       "upstreamSha256": "e800dbc5c1c95185cc82216c597724533ff5f2880179f256eef600f03e8dc2ae",
       "file": "Owl-FSRCNNX-8.glsl",
-      "sha256": "452ef61fe190f46d4b208ab3c98046ad8b6e44637540ed3855875f07dcfcad7d"
+      "sha256": "c0530c2a426f5e1592d9896442ddc4884f64fda2c88e1ade6179490149aaba80"
     },
     {
       "channels": 16,
       "upstreamFile": "FSRCNNX_x2_16-0-4-1.glsl",
       "upstreamSha256": "d5a24a271e5d9a3f7f7a053b150c460a44c25b3cf7f770857d57cc3a2e1c9965",
       "file": "Owl-FSRCNNX-16.glsl",
-      "sha256": "02e4827369f45a79baf3e93fedba4859293a8fe4942902a3c34a6ce861b7284f"
+      "sha256": "0ed32b2da4897ea9eadf8f2e98f6993037792c9862cdb99b23417786f121031d"
     }
   ]
 }

@@ -68,6 +68,15 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private var alignY = 0.0
     private var panResidualX = 0f
     private var panResidualY = 0f
+    private var panEngaged = false
+    private var rebaselinePointers = false
+    // Displayed picture size measured from osd-dimensions at gesture start, and the zoom it was
+    // measured at. Later sizes follow analytically from video-zoom (mpv scales by 2^zoom).
+    private var panWindowW = 0.0
+    private var panWindowH = 0.0
+    private var panExtentW = 0.0
+    private var panExtentH = 0.0
+    private var panMeasuredZoom = 0.0
 
     private inline fun checkFloat(vararg n: Float): Boolean {
         return !n.any { it.isInfinite() || it.isNaN() }
@@ -95,8 +104,8 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         private const val MAX_VIDEO_ZOOM = 3.0 // 8x
         private const val MIN_VIDEO_ZOOM = 0.0 // fitted size
 
-        // Restore the pre-smoothing bounded-pan response while retaining edge bounds.
-        private const val PAN_SENSITIVITY = 0.55
+        // Bounded pan follows the fingers 1:1 (see BoundedPan); no smoothing. Resting-finger
+        // wobble below this distance does not start a pan.
         private const val PAN_JITTER_DEADZONE_FRACTION = 0.0035f
 
         // Tiny changes in the distance between two resting fingers should not cause zoom wobble.
@@ -211,6 +220,24 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
     private fun clearPanFilter() {
         panResidualX = 0f
         panResidualY = 0f
+        panEngaged = false
+    }
+
+    /** Measures the displayed picture; falls back to a picture fitted to the window. */
+    private fun measurePanGeometry() {
+        val w = MPVLib.getPropertyInt("osd-dimensions/w")?.toDouble()?.takeIf { it > 0 }
+        val h = MPVLib.getPropertyInt("osd-dimensions/h")?.toDouble()?.takeIf { it > 0 }
+        panMeasuredZoom = zoomValue
+        if (w != null && h != null) {
+            fun margin(name: String) = (MPVLib.getPropertyInt("osd-dimensions/$name") ?: 0).toDouble()
+            panWindowW = w; panWindowH = h
+            panExtentW = w - margin("ml") - margin("mr")
+            panExtentH = h - margin("mt") - margin("mb")
+        } else {
+            panWindowW = width.toDouble(); panWindowH = height.toDouble()
+            panExtentW = BoundedPan.extentAtZoom(panWindowW, 0.0, zoomValue)
+            panExtentH = BoundedPan.extentAtZoom(panWindowH, 0.0, zoomValue)
+        }
     }
 
     private fun resetBoundedPan() {
@@ -239,6 +266,8 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         alignX = (MPVLib.getPropertyDouble("video-align-x") ?: 0.0).coerceIn(-1.0, 1.0)
         alignY = (MPVLib.getPropertyDouble("video-align-y") ?: 0.0).coerceIn(-1.0, 1.0)
         clearPanFilter()
+        rebaselinePointers = false
+        measurePanGeometry()
         MPVLib.setPropertyBoolean("video-recenter", true)
         MPVLib.setPropertyDouble("video-pan-x", 0.0)
         MPVLib.setPropertyDouble("video-pan-y", 0.0)
@@ -248,6 +277,15 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
         if (e.pointerCount < 2) return true
         val distance = pointerDistance(e).coerceAtLeast(1f)
         val center = pointerCenter(e)
+        if (rebaselinePointers) {
+            // A finger was lifted while others stay down: pointer indices changed, so the old
+            // center/distance belong to a different pair. Re-anchor instead of jumping.
+            rebaselinePointers = false
+            clearPanFilter()
+            lastPinchDistance = distance
+            lastPinchCenter = center
+            return true
+        }
 
         val scaleFactor = (distance / lastPinchDistance).toDouble()
         if (scaleFactor.isFinite() && scaleFactor > 0.0 && abs(scaleFactor - 1.0) >= PINCH_SCALE_DEADZONE) {
@@ -265,19 +303,26 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
             panResidualX += rawDx
             panResidualY += rawDy
 
-            // Ignore resting-finger wobble, then apply the accepted drag directly.
-            // This keeps the bounded pan stable without the previous low-pass lag.
+            // Resting-finger wobble below the deadzone does not start a pan. Once the drag is
+            // accepted, every movement is applied directly so motion is continuous, not stepped.
             val jitterDeadzone = max(2.5f, min(width, height) * PAN_JITTER_DEADZONE_FRACTION)
-            if (hypot(panResidualX, panResidualY) >= jitterDeadzone) {
-                val dx = if (width > 0f) panResidualX / width else 0f
-                val dy = if (height > 0f) panResidualY / height else 0f
-
-                // video-align is the inverse of direct manipulation: dragging the picture
-                // right/down means showing more of its left/top side.
-                alignX = (alignX - dx * PAN_SENSITIVITY).coerceIn(-1.0, 1.0)
-                alignY = (alignY - dy * PAN_SENSITIVITY).coerceIn(-1.0, 1.0)
-                MPVLib.setPropertyDouble("video-align-x", alignX)
-                MPVLib.setPropertyDouble("video-align-y", alignY)
+            if (!panEngaged && hypot(panResidualX, panResidualY) >= jitterDeadzone)
+                panEngaged = true
+            if (panEngaged && (panResidualX != 0f || panResidualY != 0f)) {
+                // Fingers moving right/down drag the picture right/down (BoundedPan explains the
+                // video-align inversion). Axes on which the picture fits stay centered.
+                val extentW = BoundedPan.extentAtZoom(panExtentW, panMeasuredZoom, zoomValue)
+                val extentH = BoundedPan.extentAtZoom(panExtentH, panMeasuredZoom, zoomValue)
+                val newX = BoundedPan.align(alignX, panResidualX.toDouble(), panWindowW, extentW)
+                val newY = BoundedPan.align(alignY, panResidualY.toDouble(), panWindowH, extentH)
+                if (newX != alignX) {
+                    alignX = newX
+                    MPVLib.setPropertyDouble("video-align-x", alignX)
+                }
+                if (newY != alignY) {
+                    alignY = newY
+                    MPVLib.setPropertyDouble("video-align-y", alignY)
+                }
 
                 panResidualX = 0f
                 panResidualY = 0f
@@ -325,6 +370,8 @@ internal class TouchGestures(private val observer: TouchGesturesObserver) {
                 if (multiTouchActive) {
                     if (e.pointerCount <= 2)
                         multiTouchActive = false
+                    else
+                        rebaselinePointers = true
                     return true
                 }
             }

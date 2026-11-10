@@ -1,5 +1,13 @@
 package `is`.xyz.mpv
 
+import android.content.Context
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -10,12 +18,34 @@ import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.DiffUtil
 
 class FolderAdapter(
+    private val context: Context,
+    private val scope: CoroutineScope,
     private val onClick: (MediaFolder) -> Unit,
     private val onSelectionChanged: (Int) -> Unit
 ) : ListAdapter<MediaFolder, FolderAdapter.Holder>(object : DiffUtil.ItemCallback<MediaFolder>() {
     override fun areItemsTheSame(a: MediaFolder, b: MediaFolder) = a.key == b.key
     override fun areContentsTheSame(a: MediaFolder, b: MediaFolder) = a == b
 }) {
+    private var unseen = emptyMap<String, Int>()
+    private var countJob: Job? = null
+    private var generation = 0
+    fun cancelPending() { generation++; countJob?.cancel() }
+    private fun refreshUnseen() {
+        val version = ++generation
+        countJob?.cancel()
+        val snapshot = allItems.toList()
+        countJob = scope.launch {
+            val counts = withContext(Dispatchers.Default) {
+                val seen = withContext(Dispatchers.IO) { SeenVideos.snapshot(context) }
+                val workContext = currentCoroutineContext()
+                snapshot.associate { folder -> folder.key to SeenVideos.unseenCount(folder.videos, seen) { workContext.ensureActive() } }
+            }
+            if (version != generation || OwlSession.ending) return@launch
+            val changed = (unseen.keys + counts.keys).filter { unseen[it] != counts[it] }.toSet()
+            unseen = counts
+            currentList.forEachIndexed { index, folder -> if (folder.key in changed) notifyItemChanged(index, "unseen") }
+        }
+    }
     private var allItems: List<MediaFolder> = emptyList()
     private val visibleItems: List<MediaFolder> get() = currentList
     private var currentQuery: String = ""
@@ -25,6 +55,7 @@ class FolderAdapter(
         allItems = items
         selectedKeys.retainAll(items.map { it.key }.toSet())
         applyFilter()
+        refreshUnseen()
         onSelectionChanged(selectedKeys.size)
     }
 
@@ -77,7 +108,10 @@ class FolderAdapter(
 
     override fun onBindViewHolder(holder: Holder, position: Int, payloads: MutableList<Any>) {
         if (payloads.isEmpty()) super.onBindViewHolder(holder, position, payloads)
-        else holder.itemView.isActivated = getItem(position).key in selectedKeys
+        else {
+            if (payloads.contains("unseen")) holder.bindUnseen(getItem(position))
+            holder.itemView.isActivated = getItem(position).key in selectedKeys
+        }
     }
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
@@ -89,7 +123,17 @@ class FolderAdapter(
         private val title: TextView = view.findViewById(R.id.folderTitle)
         private val count: TextView = view.findViewById(R.id.folderCount)
 
+        private val badge: TextView = view.findViewById(R.id.folderUnseenBadge)
+
+        fun bindUnseen(item: MediaFolder) {
+            val value = unseen[item.key] ?: 0
+            badge.visibility = if (value > 0) View.VISIBLE else View.GONE
+            badge.text = if (value > 99) "99+" else value.toString()
+            badge.contentDescription = itemView.context.getString(R.string.folder_unseen_count, value)
+        }
+
         fun bind(item: MediaFolder) {
+            bindUnseen(item)
             title.text = item.name
             count.text = if (item.storageLabel.isBlank()) {
                 "${item.videos.size} 비디오"

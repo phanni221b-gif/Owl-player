@@ -15,6 +15,8 @@
 
 // Modified by Owl Player contributors, 2026-11-02.
 // Owl adaptation: MAIN RGB input/reconstruction for direct MediaCodec textures.
+// Modified 2026-11-10: sample HOOKED with texture(); libplacebo HOOKED_tex uses textureLod, which
+// GL_OES_EGL_image_external_essl3 does not define for samplerExternalOES (direct MediaCodec).
 // CNN coefficients and topology are unchanged. SDR only. See ATTRIBUTION.txt.
 
 //!HOOK MAIN
@@ -23,7 +25,7 @@
 //!BIND HOOKED
 //!SAVE OWL_LUMA
 //!COMPONENTS 1
-vec4 hook() { return vec4(dot(HOOKED_tex(HOOKED_pos).rgb, vec3(0.2126, 0.7152, 0.0722)), 0.0, 0.0, 1.0); }
+vec4 hook() { return vec4(dot((HOOKED_mul * texture(HOOKED_raw, HOOKED_pos)).rgb, vec3(0.2126, 0.7152, 0.0722)), 0.0, 0.0, 1.0); }
 
 //!HOOK MAIN
 //!WHEN OUTPUT.w OWL_LUMA.w / 1.300 > OUTPUT.h OWL_LUMA.h / 1.300 > *
@@ -1169,7 +1171,7 @@ return vec4(res[index.x * 2 + index.y], 0, 0, 1);
 //!WIDTH OWL_SR_LUMA.w
 //!HEIGHT OWL_SR_LUMA.h
 vec4 hook() {
-    vec4 color = HOOKED_tex(HOOKED_pos);
+    vec4 color = (HOOKED_mul * texture(HOOKED_raw, HOOKED_pos));
     float luma = dot(color.rgb, vec3(0.2126, 0.7152, 0.0722));
     float neural = OWL_SR_LUMA_tex(OWL_SR_LUMA_pos).r;
     return vec4(color.rgb + vec3(neural - luma), color.a);

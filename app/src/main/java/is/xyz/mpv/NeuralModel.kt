@@ -6,8 +6,8 @@ internal data class NeuralModel(val channels: Int, val file: String, val sha256:
     fun verifies(bytes: ByteArray) = MessageDigest.getInstance("SHA-256").digest(bytes)
         .joinToString("") { "%02x".format(it) } == sha256
     companion object {
-        val neural = NeuralModel(8, "Owl-FSRCNNX-8.glsl", "452ef61fe190f46d4b208ab3c98046ad8b6e44637540ed3855875f07dcfcad7d")
-        val aiMax = NeuralModel(16, "Owl-FSRCNNX-16.glsl", "02e4827369f45a79baf3e93fedba4859293a8fe4942902a3c34a6ce861b7284f")
+        val neural = NeuralModel(8, "Owl-FSRCNNX-8.glsl", "c0530c2a426f5e1592d9896442ddc4884f64fda2c88e1ade6179490149aaba80")
+        val aiMax = NeuralModel(16, "Owl-FSRCNNX-16.glsl", "0ed32b2da4897ea9eadf8f2e98f6993037792c9862cdb99b23417786f121031d")
         fun forMode(mode: QualityMode) = if (mode == QualityMode.AI_MAX) aiMax else neural
     }
 }

@@ -31,7 +31,7 @@ jobs:
         run: |
           VERSION=$(sed -n 's/.*versionName "\([^"]*\)".*/\1/p' app/build.gradle | head -1)
           CODE=$(sed -n 's/.*versionCode \([0-9]*\).*/\1/p' app/build.gradle | head -1)
-          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-diagnostic\.[0-9]+)?$ ]]
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then test "$GITHUB_REF_NAME" = "v$VERSION"; fi
           echo "OWL_VERSION=$VERSION" >> "$GITHUB_ENV"
           echo "OWL_ARM64_CODE=$((CODE + 2000))" >> "$GITHUB_ENV"
@@ -77,11 +77,14 @@ jobs:
           043338c15fbbd79e505a7f96c3436fc6ba16f81e4cbd41351742e2d65f632853  buildscripts/scripts/mpv.sh
           33fd2e40e11c45dc3ebd92f6b1bca51aba79339e31abdfc4545cab280fd5e95c  buildscripts/scripts/mpv-android.sh
           ad7b8643fdb7fe403a70ee682ab4a55dc11db9d7d3ecefd0d948a6030234e2d2  app/src/main/jni/render_pass_stats.h
-          a69956145ee1d270c61826734e5d51501714667a8359c8db28203f409f71c699  app/src/main/java/is/xyz/mpv/TouchGestures.kt
+          cbb8994eeb6a0292c3a7dbe0b0dc2d9db7dcab8e8e373128d534dfe8b155927f  app/src/main/java/is/xyz/mpv/TouchGestures.kt
           EOF
           sha256sum -c /tmp/owl-protected-core.sha256
           GESTURE=app/src/main/java/is/xyz/mpv/TouchGestures.kt
-          grep -q 'private const val PAN_SENSITIVITY = 0.55' "$GESTURE"
+          # 0.6.1: bounded pan follows the fingers 1:1 via BoundedPan (fixed 0.55 gain removed; see docs/audit-0.6.1.md).
+          ! grep -q 'PAN_SENSITIVITY' "$GESTURE"
+          grep -q 'BoundedPan.align(alignX, panResidualX.toDouble(), panWindowW, extentW)' "$GESTURE"
+          grep -q 'BoundedPan.align(alignY, panResidualY.toDouble(), panWindowH, extentH)' "$GESTURE"
           grep -q 'private const val PAN_JITTER_DEADZONE_FRACTION = 0.0035f' "$GESTURE"
           grep -q 'private const val PINCH_SCALE_DEADZONE = 0.003' "$GESTURE"
           grep -q 'MPVLib.setPropertyDouble("video-align-x", alignX)' "$GESTURE"
